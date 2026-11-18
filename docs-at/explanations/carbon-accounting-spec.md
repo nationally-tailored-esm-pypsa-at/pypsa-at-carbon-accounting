@@ -292,6 +292,33 @@ all countries together equal G_f.
 - Evals: `view_balance_carbon_claims` additionally shows the cap (`tolerance · w · G_f`) as a third
   group next to the claimed and EU-average credits.
 
+### 3.7 Contribution cap (TODO, D19)
+
+!!! warning "Open"
+    Not specified or implemented yet.
+
+**Problem.** Neither the consumption bound (3.3, item 1) nor the fair share (3.6) depends on the
+country's own production. A country can claim more pooled credits than it adds to the pool, up to
+its consumption or its fair share. For example, Austria can claim green oil credits without
+producing any green oil.
+
+**Goal.** Each country claims at most x times what it contributes to the pool of the fuel:
+
+`P({CT} renewable k claim) ≤ x · C(CT, f)`
+
+- `C(CT, f) = Σ_l Σ_t w_t · efficiency_attr(l) · p0(l, t)` over the attribute ports into
+  `EU renewable f attribute` of the producers located in CT. This is the same sum as `G_f`
+  (3.6), restricted to one country. `x` is a config parameter, so the constraint stays linear.
+
+**Open questions.**
+
+- Who contributes green imports (D10): the importing country, or nobody?
+- Oil and kerosene share one pool: should the cap apply to both claim kinds together?
+- Scope: only budget countries (like 3.6), or all countries? Capping all countries can make
+  full retirement (D5) infeasible.
+- Should it combine with the fair share cap, or replace it?
+- Config key (e.g. `contribution_cap: {enable, factor}`), tests, and an evals view.
+
 ## 4. Configuration
 
 ```yaml
@@ -496,3 +523,4 @@ Each package is one PR with tests and passes `ruff`, the unit tests and a dry ru
 | D16 | Tie-break: claims of countries with a national budget cost `claim_cost` = 0.01 EUR/t, so they claim pooled credits only when their budget needs them. Without it, the split is arbitrary while no budget binds | decided |
 | D17 | Captured CO2 counts as negative emissions in the capturing country unless it is used for a synthetic fuel. Capture keeps its `technology` coefficients; G2 producers book the CO2 they use at `co2 atmosphere` in their own country. No removal pool, claim or bound. CO2 that is exported and used abroad is charged to the importing country | decided |
 | D18 | Optional fair share (`fair_share.enable`, default off): pooled oil, kerosene and methanol claims of budget countries ≤ tolerance × key × EU green production. The key is the country's share of the EU's fixed demand in the current horizon (3.6). Countries without a budget are not capped | decided |
+| D19 | Contribution cap: pooled claims of a country ≤ x × its own contribution to the pool (3.7) | open |
