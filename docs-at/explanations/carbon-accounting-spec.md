@@ -104,17 +104,41 @@ exports, but not for the CO2 it uses itself. CO2 that is exported and used abroa
 to the importing country. This needs no constraint and no tracing of CO2 through the
 CO2 network; exact tracing isn't linear, because CO2 pipelines are bidirectional.
 
-Check of P5 per chain (carbon units):
+**Check of P5 per chain.** A chain follows one unit of carbon from where it enters the
+system to where it ends up. Along the way it is booked at `co2 atmosphere` at up to four
+stages:
 
-| Chain | `technology` | `carrier` |
-|---|---|---|
-| Fossil + CCS (capture rate c) | 1−c | 1−c |
-| Fossil + CCU → FT → burned | (1−c) + c = 1 | (1−c) + c (FT) + 1 (use) − 1 (claim) = 1 |
-| DAC → FT → burned | −1 + 1 = 0 | −1 + 1 (FT) + 1 − 1 = 0 |
-| DAC → storage | −1 | −1 |
-| Biogas upgrading → burned | −1 + 1 = 0 | 0 + 1 − 1 = 0 |
-| Biogas CC (stored share s) | −1 − s + 1 = −s | −s + 1 − 1 = −s |
-| DAC → FT → naphtha → plastics (share p re-emitted) | −1 + p | −1 + 1 (FT) + p − 1 (claim) = p − 1 |
+| Stage | Component | `technology` | `carrier` |
+|---|---|---|---|
+| **Source** | where the carbon enters the chain: fossil emitter with capture (C1), DAC (C1), bio-fuel producer (G1) | residual emission (1−c), DAC −1, bio-fuel −1 (creation credit) | same, but bio-fuel 0 (P2); only the captured share keeps its credit |
+| **Conversion** | synthetic fuel producer (G2) | 0 | +CO2 used (P4, D17) |
+| **Use** | fuel consumer (U), e.g. a boiler or `kerosene for aviation` | +EF·fuel | +EF·fuel (unchanged) |
+| **Claim** | claim link that retires the attribute (3.3) | — | −EF·fuel (P1) |
+
+Values are in carbon units: 1 = the carbon content of the fuel, i.e. EF × energy. `c` is the
+capture rate, `s` the share of biogenic carbon that is captured and stored, `p` the share
+that is re-emitted at end of life. A dash means the stage doesn't occur in the chain.
+
+| Chain | Method | Source | Conversion | Use | Claim | Net |
+|---|---|---|---|---|---|---|
+| Fossil + CCS | `technology` | 1−c | — | — | — | 1−c |
+| | `carrier` | 1−c | — | — | — | 1−c |
+| Fossil + CCU → FT → burned | `technology` | 1−c | 0 | +c | — | 1 |
+| | `carrier` | 1−c | +c | +c | −c | 1 |
+| DAC → FT → burned | `technology` | −1 | 0 | +1 | — | 0 |
+| | `carrier` | −1 | +1 | +1 | −1 | 0 |
+| DAC → storage | `technology` | −1 | — | — | — | −1 |
+| | `carrier` | −1 | — | — | — | −1 |
+| Biogas upgrading → burned | `technology` | −1 | — | +1 | — | 0 |
+| | `carrier` | 0 | — | +1 | −1 | 0 |
+| Biogas CC → burned | `technology` | −1−s | — | +1 | — | −s |
+| | `carrier` | −s | — | +1 | −1 | −s |
+| DAC → FT → naphtha → plastics | `technology` | −1 | 0 | +p | — | p−1 |
+| | `carrier` | −1 | +1 | +p | −1 | p−1 |
+
+The net value per chain is the same under both methods (P5). What differs is the stage, and
+so the country, where it is booked. Under `technology` the credit sits at the source; under
+`carrier` it moves to the claim, i.e. to the country that consumes the green fuel.
 
 ### 3.3 Accounting layer
 
