@@ -165,7 +165,7 @@ def _(ca, info, mo, scenario_select):
     return (reference_select,)
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(badge, ca, country_select, info, mo, reference_select, scenario_select):
     setup = ca.check_setup(info, list(scenario_select.value), country_select.value)
     mo.output.replace(
@@ -285,7 +285,7 @@ def _(consistent, horizons, mo, reference, selected):
     return a_select, b_select, horizon_select
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(
     a_select,
     add_waterfall,
@@ -363,7 +363,7 @@ def _(
     return
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(ca, colours, consistent, go, layout, mo, reference, target):
     assert consistent
     cost = ca.add_cost_deltas(target, reference)
@@ -821,7 +821,7 @@ def _(consistent, mo, physical):
     return (group_select,)
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(ca, colours, country, group_select, mo, physical, px, reference):
     _group = physical.xs(group_select.value, level="group")
     _table = ca.difference_table(_group, reference, cutoff=1e-3)

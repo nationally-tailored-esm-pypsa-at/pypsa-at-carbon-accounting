@@ -51,8 +51,8 @@ Everything else is inherited: all countries, the planning horizons 2025, 2030,
 
 | Scenario | Carbon accounting |
 |---|---|
-| `CA_base` | `technology`: the technology that releases CO2 books it (status quo) |
-| `CA_carrier` | `carrier`: green fuels book zero, countries claim green certificates |
+| `CA_base` | `technology`: emissions are attached to the technology. the technology books the co2, irrespective of the fuel it uses. |
+| `CA_carrier` | `carrier`: emissions are attached to the carriers. green fuels book zero, fossil fuels book co2. For mixed networks, countries claim green certificates for accounting for green fuel combustion. |
 
 See [Carbon accounting methods](../explanations/co2-balancing.md#carbon-accounting-methods)
 for the difference. To run only one scenario, request its last solved network, e.g.
