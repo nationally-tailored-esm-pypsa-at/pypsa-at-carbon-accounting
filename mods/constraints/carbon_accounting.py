@@ -165,8 +165,8 @@ def _add_fair_share_bounds(n: pypsa.Network, cts: list[str], tolerance: float) -
     keys = keys[keys.index.str[:2].isin(cts)]
     production = {}
     for claim, key in keys.items():
-        kind = n.links.at[claim, "carrier"]
-        kind = next(k for k, c in CLAIM_CARRIERS.items() if c == kind)
+        carrier = n.links.at[claim, "carrier"]
+        kind = next(k for k, c in CLAIM_CARRIERS.items() if c == carrier)
         fuel = kind.split()[0]
         if fuel not in production:
             production[fuel] = green_production(n, fuel)

@@ -154,7 +154,7 @@ from ordinary PyPSA components, so `n.statistics` and the evals see it without s
 | Bus (pool) | `EU renewable oil attribute`, `EU renewable methanol attribute` | — | carriers `renewable oil attribute`, `renewable methanol attribute`, `location=EU` |
 | Bus (country) | `{CT} renewable oil attribute`, `{CT} renewable methanol attribute` | — | same carriers, `location=CT` |
 | Link (distribution) | `EU renewable oil attribute -> {CT}`, and the same for methanol | pool → country bus | `efficiency = 1`, `p_nom = 1e9`, no bound (D3) |
-| Store | one per pool bus and per `{CT} renewable gas attribute`, same name | attribute bus | `e_nom_extendable=True`, `capital_cost=0`, `e_cyclic=True` |
+| Store | one per pool bus and per `{CT} renewable gas attribute`, same name | attribute bus | `e_nom_extendable=True`, `capital_cost=1e-6`, `e_cyclic=True` (the tiny cost keeps `e_nom` at the swing within the year; with zero cost the solver parks the stores at arbitrary, huge levels) |
 | Attribute port (G1–G3) | extra port `bus{k}` on the producer link | attribute bus of the producer's country (gas) or EU pool | `efficiency{k} = out` (MWh attribute per MWh fuel) |
 | CCU port (G2) | extra port `bus{k}` on the synthetic fuel producer | `co2 atmosphere` | `efficiency{k} = −stored` (t CO2 used per unit of `p0`, 3.2) |
 | Link (claim) | `{CT} renewable gas claim`, `{CT} renewable oil claim`, `{CT} renewable oil claim aviation`, `{CT} renewable methanol claim` | bus0 `{CT} … attribute` (country bus), bus1 `co2 atmosphere` | `efficiency = −EF`, `p_nom = 1e9` |
@@ -206,6 +206,18 @@ Only AT and DE have national budgets; the other countries' claims only matter fo
     share). Therefore the claims of countries with a national budget carry a small cost
     (`claim_cost`, D16): they claim only what their budget needs.
 
+    The claim cost is not a real cost and is irrelevant for a country's system costs. At
+    0.01 EUR/t, Austria's 17.5 Mt of claims in CA_carrier 2025 cost 0.18 MEUR, which is
+    negligible against the system costs and too small to change investment or dispatch:
+    claims only move credits between countries, while the physical flows stay the same.
+    It is needed for reasonable
+    solver outputs: without it, the split of the credits is degenerate, and the solver
+    returns an arbitrary, non-reproducible allocation.
+
+    As a consequence, in years when the national budget doesn't bind, countries with a
+    budget report their **maximum** emissions, not a neutral allocation: they leave all
+    credits they don't need to the other countries.
+
 ### 3.4 Imports (D10)
 
 Import links keep `p0` in t CO2 (their costs are defined per t). Only bus0 is re-pointed:
@@ -235,8 +247,9 @@ Import links keep `p0` in t CO2 (their costs are defined per t). Only bus0 is re
 
 By default, countries with a national budget claim pooled credits up to their own consumption
 (D14). In CA_carrier 2025, Austria claims 68 TWh of green oil, against 3.1 TWh at the fair
-share defined below. The option `fair_share` caps these claims at the country's share of the
-EU pool.
+share defined below. The option `fair_share` caps the credits a country **takes from** the EU
+pool at its share of the EU pool. This share follows the country's fixed fuel demand, not the
+green fuel it adds to the pool (that would be the contribution cap, 3.7).
 
 **Natural definition and why it isn't used.** The fair claim is
 `consumption(CT, f) × green production(EU, f) / consumption(EU, f)`. Consumption and green

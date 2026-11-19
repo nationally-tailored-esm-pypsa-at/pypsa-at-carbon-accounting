@@ -233,6 +233,11 @@ class TestGasLayer:
         assert store.e_cyclic
         assert store.e_nom_extendable
 
+    def test_attribute_stores_have_capital_cost(self, n):
+        stores = n.stores[n.stores.carrier.str.endswith("attribute")]
+        assert len(stores) == 4
+        assert stores.capital_cost.gt(0).all()
+
     def test_claim_links(self, n):
         claim = n.links.loc["DE renewable gas claim"]
         assert claim.bus0 == "DE renewable gas attribute"
@@ -267,6 +272,23 @@ class TestPooledLayer:
     def n(self, carbon_network):
         _apply(carbon_network)
         return carbon_network
+
+    def test_no_methanol_layer_without_methanol(self, carbon_network):
+        n = carbon_network
+        at_methanol = (n.links.filter(regex=r"^bus\d+$") == "EU methanol").any(axis=1)
+        n.remove("Link", n.links.index[at_methanol])
+        n.remove("Bus", "EU methanol")
+        _apply(n)
+        for c in ("buses", "links", "stores"):
+            assert not getattr(n, c).index.str.contains("methanol").any()
+        assert "EU renewable oil attribute" in n.buses.index
+
+    def test_several_fuel_outputs_raise(self, carbon_network):
+        n = carbon_network
+        link = n.links.index[n.links.carrier == "biogas to gas"][0]
+        n.links.loc[link, ["bus3", "efficiency3"]] = ["EU oil", 0.1]
+        with pytest.raises(ValueError, match="several fuel outputs"):
+            _apply(n)
 
     @pytest.mark.parametrize("fuel", ["oil", "methanol"])
     def test_pool_feeds_every_country(self, n, fuel):
