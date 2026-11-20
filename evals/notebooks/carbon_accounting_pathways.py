@@ -89,7 +89,7 @@ def _(ca, cp, mo):
         fig.update_xaxes(type="category")
         return fig
 
-    return CATEGORY_STYLE, EVALUATOR_COLOURS, PALETTE, badge, layout
+    return CATEGORY_STYLE, EVALUATOR_COLOURS, badge, layout
 
 
 @app.cell
@@ -129,7 +129,7 @@ def _(REPO, mo):
 
 
 @app.cell
-def _(PALETTE, ca, mo, root_input):
+def _(ca, mo, root_input):
     files = ca.find_scenarios(root_input.value)
     mo.stop(
         not files,
@@ -138,7 +138,6 @@ def _(PALETTE, ca, mo, root_input):
         ),
     )
     info = ca.run_info(files)
-    colours = {s: PALETTE[i % len(PALETTE)] for i, s in enumerate(files)}
     scenario_select = mo.ui.multiselect(
         options=list(files), value=ca.default_scenarios(info), label="Scenarios"
     )
@@ -148,7 +147,7 @@ def _(PALETTE, ca, mo, root_input):
         value="AT" if "AT" in budget_countries else budget_countries[0],
         label="Country",
     )
-    return colours, country_select, files, info, scenario_select
+    return country_select, files, info, scenario_select
 
 
 @app.cell
@@ -399,71 +398,6 @@ def _(cp, mo, selected):
     return pathway_evaluator, pathway_scenario
 
 
-@app.cell(expand_output=True)
-def _(budget, colours, country, cp, go, layout, mo, totals):
-    _booked = cp.as_booked(totals)
-    _lines = go.Figure()
-    for _scenario in totals.index.unique("scenario"):
-        _rows = totals.xs(_scenario, level="scenario")
-        _x = _rows.index.get_level_values("horizon")
-        for _series, _dash, _label in [
-            (_booked.xs(_scenario, level="scenario"), "solid", "as booked"),
-            (_rows[cp.TECHNOLOGY], "dot", cp.TECHNOLOGY),
-        ]:
-            _lines.add_trace(
-                go.Scatter(
-                    x=_x,
-                    y=_series,
-                    name=f"{_scenario}: {_label}",
-                    mode="lines+markers",
-                    line=dict(color=colours[_scenario], dash=_dash, width=2),
-                    marker=dict(size=8),
-                    hovertemplate="%{y:.2f} Mt",
-                )
-            )
-    # one budget line, or one per scenario if the budgets differ
-    _budgets = budget.unstack("scenario")
-    _same = _budgets.nunique(axis=1, dropna=False).le(1).all()
-    for _scenario in [_budgets.columns[0]] if _same else _budgets.columns:
-        _lines.add_trace(
-            go.Scatter(
-                x=list(_budgets.index),
-                y=_budgets[_scenario],
-                name="budget" if _same else f"{_scenario}: budget",
-                mode="lines",
-                line=dict(
-                    color="#0b0b0b" if _same else colours[_scenario],
-                    dash="dash",
-                    width=1,
-                ),
-            )
-        )
-    layout(_lines, f"{country}: as booked vs physical ({cp.TECHNOLOGY})")
-
-    _physical = totals[cp.TECHNOLOGY].unstack("horizon").droplevel("method")
-    mo.vstack(
-        [
-            mo.md(
-                f"""
-    ## 3 Decarbonisation pathways
-
-    The pathway **as booked** (solid, each scenario under its own method) follows the
-    budget in every scenario, so it cannot tell the approaches apart. The **physical**
-    pathway needs one evaluator for all scenarios; `{cp.TECHNOLOGY}` is the natural one,
-    because it depends on the physical flows only (dotted). The gap between solid and
-    dotted lines of a carrier scenario is what {country} meets by claims instead of
-    domestic abatement and domestic green fuel production.
-
-    {country} evaluated as `{cp.TECHNOLOGY}` (Mt CO2):
-    """
-            ),
-            mo.ui.table(_physical.round(2).reset_index(), selection=None),
-            mo.ui.plotly(_lines),
-        ]
-    )
-    return
-
-
 @app.cell
 def _(
     CATEGORY_STYLE,
@@ -518,7 +452,7 @@ def _(
     mo.vstack(
         [
             mo.md(
-                "### Pathway by category\n\n"
+                "## 3 Decarbonisation pathways\n\n"
                 "The categories of the national balance bridge. Fuel use, process & "
                 "waste and capture credit are physical; biofuel credit and green import "
                 "credit exist only in `CA_technology`; captured CO2 used in synthetic "
