@@ -160,7 +160,7 @@ from ordinary PyPSA components, so `n.statistics` and the evals see it without s
 | Link (claim) | `{CT} renewable gas claim`, `{CT} renewable oil claim`, `{CT} renewable oil claim aviation`, `{CT} renewable methanol claim` | bus0 `{CT} … attribute` (country bus), bus1 `co2 atmosphere` | `efficiency = −EF`, `p_nom = 1e9` |
 | Claim cost (D16) | `marginal_cost` of the claim links of countries with a national budget | | `claim_cost × EF`, i.e. EUR per t credited |
 | Link (transfer) | `{X} renewable gas attribute -> {Y}` for every pair X≠Y connected by a gas pipeline | `{X} … attribute` → `{Y} … attribute` | `efficiency = 1`, `p_nom = 1e9` |
-| Carriers | the attribute, claim and transfer carriers above, `{attribute carrier} distribution` and `renewable gas attribute transfer`, plus `co2 import` | | colours in `config/plotting.at.yaml` |
+| Carriers | the attribute, claim and transfer carriers above, `{attribute carrier} distribution` and `renewable gas attribute transfer`, plus `co2 import` | | colours in `config/plotting.ca.yaml` |
 
 Claim links exist for every country that has nodes. They carry the country prefix
 (`co2_budget.py` selects links by name). Their bus0 is always a country bus with
@@ -349,7 +349,7 @@ mods:
 - `tolerance < 1` is allowed (stricter than the fair share); `tolerance ≤ 0` raises a `ValueError`.
 
 - `enable: false` or `method: technology` → the orchestrator returns early. The network is
-  bit-identical to today. `technology` is the default in `config.at.yaml` (D6).
+  bit-identical to today. `technology` is the default in `config/config.ca.yaml` (D6).
 - An unknown `method` raises a `ValueError` (fail early).
 - `config/scenarios.carbon-accounting.yaml`: `CA_base` (technology, the reference) and
   `CA_carrier` (`mods.carbon_accounting.method: carrier`), both listed under `run.name`.
@@ -529,7 +529,7 @@ Each package is one PR with tests and passes `ruff`, the unit tests and a dry ru
 | D3 | Oil/methanol attributes transfer freely (EU pool) | decided |
 | D4 | All bounds are annual | decided |
 | D5 | Full retirement of all attributes | decided |
-| D6 | Default in `config.at.yaml`: `technology` | decided |
+| D6 | Default in `config/config.ca.yaml`: `technology` | decided |
 | D7 | Claims cover all consumption of a carrier, including non-energy use | decided |
 | D8 | α also applies to kerosene claims | decided |
 | D9 | Removal credits go to the capturing country (implemented through D17) | decided |
