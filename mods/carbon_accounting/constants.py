@@ -6,7 +6,7 @@
 
 from frozendict import frozendict
 
-# Carbon accounting (docs-at/explanations/carbon-accounting-spec.md, section 3.2).
+# Carbon accounting (docs-ca/explanations/carbon-accounting-spec.md, section 3.2).
 # Link carriers per transformation class of the carrier-based method.
 GREEN_BIO_PRODUCERS: tuple[str, ...] = (
     "biogas to gas",

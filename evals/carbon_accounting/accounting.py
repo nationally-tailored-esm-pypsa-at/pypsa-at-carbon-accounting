@@ -9,7 +9,7 @@ Backs the notebook ``evals/carbon_accounting/notebooks/carbon_accounting.py``. F
 read networks take a mapping scenario -> horizon -> network and return frames
 with a ``scenario`` and a ``horizon`` level, so they work for any number of
 scenarios. Functions that compare scenarios take these frames and a reference
-scenario. See ``docs-at/explanations/carbon-accounting-eval-spec.md``.
+scenario. See ``docs-ca/explanations/carbon-accounting-eval-spec.md``.
 
 The carrier lists mirror ``mods.carbon_accounting.constants``; the evals do not import ``mods``.
 """
