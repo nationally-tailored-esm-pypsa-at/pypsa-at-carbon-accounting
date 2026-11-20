@@ -92,7 +92,7 @@ def _(ca, cp, mo):
     return CATEGORY_STYLE, EVALUATOR_COLOURS, badge, layout
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
     # Carbon accounting: emissions under every method
@@ -238,7 +238,7 @@ def _(
     return budget, frame, totals
 
 
-@app.cell
+@app.cell(hide_code=True, expand_output=True)
 def _(budget, country, cp, mo, totals):
     _table = totals.copy()
     _table.insert(
@@ -270,7 +270,7 @@ def _(budget, country, cp, mo, totals):
     return
 
 
-@app.cell(expand_output=True)
+@app.cell(hide_code=True, expand_output=True)
 def _(EVALUATOR_COLOURS, budget, country, cp, go, layout, mo, totals):
     _gaps = cp.against_budget(totals, budget)
 
@@ -339,48 +339,43 @@ def _(EVALUATOR_COLOURS, budget, country, cp, go, layout, mo, totals):
     return
 
 
-@app.cell
-def _(mo, totals):
-    _horizons = sorted(totals.index.unique("horizon"))
-    heatmap_horizon = mo.ui.dropdown(
-        options=_horizons,
-        value="2040" if "2040" in _horizons else _horizons[-1],
-        label="Horizon",
-    )
-    return (heatmap_horizon,)
-
-
-@app.cell
-def _(country, cp, go, heatmap_horizon, mo, totals):
-    _year = heatmap_horizon.value
-    _horizon = totals.index.get_level_values("horizon").astype(str)
-    _rows = totals[_horizon == _year].droplevel(["method", "horizon"])
+@app.cell(expand_output=True)
+def _(country, cp, go, mo, totals):
+    # one column per (scenario, horizon): scenarios outer, horizons side by side
+    _rows = cp.method_gap(totals).droplevel("method")
     _z = _rows.T.reindex(list(cp.EVALUATORS))
+    _x = [
+        list(_z.columns.get_level_values("scenario")),
+        list(_z.columns.get_level_values("horizon").astype(str)),
+    ]
     _heat = go.Figure(
         go.Heatmap(
-            x=list(_z.columns),
+            x=_x,
             y=list(_z.index),
             z=_z.to_numpy(),
-            text=_z.map(lambda v: "" if v != v else f"{v:.1f}").to_numpy(),
+            text=_z.map(lambda v: "" if v != v else f"{v:+.1f}").to_numpy(),
             texttemplate="%{text}",
             colorscale="RdBu_r",
             zmid=0,
-            colorbar=dict(title="Mt CO2"),
-            hovertemplate="%{y}<br>%{x}: %{z:.2f} Mt<extra></extra>",
+            colorbar=dict(title="Δ Mt CO2"),
+            hovertemplate="%{y}<br>%{x}: %{z:+.2f} Mt vs own method<extra></extra>",
         )
     )
     _heat.update_layout(
-        title=f"{country} {_year}: emissions per scenario and evaluator (Mt CO2)",
+        title=f"{country}: evaluator minus own method per scenario and horizon (Mt CO2)",
         template="plotly_white",
-        height=360,
-        margin=dict(t=60, b=40),
+        height=380,
+        margin=dict(t=60, b=60),
     )
-    _heat.update_xaxes(title_text="Scenario", type="category")
+    _heat.update_xaxes(title_text="Scenario / horizon")
     _heat.update_yaxes(title_text="Evaluator", autorange="reversed")
     mo.vstack(
         [
-            mo.md(f"### {country} in {_year}: every scenario under every evaluator"),
-            heatmap_horizon,
+            mo.md(
+                f"### {country}: every evaluator against the scenario's own method\n\n"
+                "Emissions under the evaluator minus emissions under the method the "
+                "scenario was optimised with; the own method is 0 by construction."
+            ),
             mo.ui.plotly(_heat),
         ]
     )
@@ -398,7 +393,7 @@ def _(cp, mo, selected):
     return pathway_evaluator, pathway_scenario
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(
     CATEGORY_STYLE,
     country,
@@ -466,7 +461,7 @@ def _(
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(ca, country, cp, frame, mo, reference):
     _categories = (
         frame.xs((country, cp.TECHNOLOGY), level=["country", "evaluator"])

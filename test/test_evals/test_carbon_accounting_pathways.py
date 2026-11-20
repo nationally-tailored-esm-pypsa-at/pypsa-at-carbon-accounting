@@ -172,6 +172,16 @@ class TestFrames:
         gaps = cp.against_budget(totals, budget)
         assert (gaps + 1.0).to_numpy() == pytest.approx(totals.to_numpy(), nan_ok=True)
 
+    def test_method_gap(self, frame):
+        totals = cp.national_totals(frame, "DE")
+        gaps = cp.method_gap(totals)
+        assert gaps.at[("base", "technology", "2050"), cp.TECHNOLOGY] == 0.0
+        assert gaps.at[("carrier", "carrier", "2050"), cp.CARRIER] == 0.0
+        row = totals.loc[("base", "technology", "2050")]
+        assert gaps.at[("base", "technology", "2050"), cp.CARRIER] == pytest.approx(
+            row[cp.CARRIER] - row[cp.TECHNOLOGY]
+        )
+
     def test_budgets(self):
         n = solve(oil_toy(), "technology")
         add_budget(n, "AT", mu=0.0, constant=2e6)

@@ -497,6 +497,28 @@ def against_budget(totals: pd.DataFrame, budget: pd.Series) -> pd.DataFrame:
     return totals.sub(budget.reindex(keys).to_numpy(), axis=0)
 
 
+def method_gap(totals: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return the national totals minus the totals under the scenario's own method.
+
+    The evaluator that matches the method a scenario was optimised under is
+    zero by construction.
+
+    Parameters
+    ----------
+    totals
+        Output of :func:`national_totals`.
+
+    Returns
+    -------
+    :
+        Mt CO2 above (positive) or below (negative) the own method, like ``totals``.
+    """
+    own = [f"CA_{m}" for m in totals.index.get_level_values("method")]
+    reference = totals.to_numpy()[range(len(totals)), totals.columns.get_indexer(own)]
+    return totals.sub(reference, axis=0)
+
+
 def category_pathway(
     frame: pd.DataFrame,
     country: str,
