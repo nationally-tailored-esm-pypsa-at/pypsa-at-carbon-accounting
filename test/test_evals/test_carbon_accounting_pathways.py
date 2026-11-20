@@ -161,18 +161,6 @@ class TestFrames:
         assert list(totals.columns) == list(cp.EVALUATORS)
         assert totals.notna().all().all()
 
-    def test_as_booked(self, frame):
-        totals = cp.national_totals(frame, "DE")
-        own = cp.as_booked(totals)
-        assert (
-            own[("base", "technology", "2050")]
-            == totals.at[("base", "technology", "2050"), cp.TECHNOLOGY]
-        )
-        assert (
-            own[("carrier", "carrier", "2050")]
-            == totals.at[("carrier", "carrier", "2050"), cp.CARRIER]
-        )
-
     def test_against_budget(self, frame):
         totals = cp.national_totals(frame, "DE")
         budget = pd.Series(

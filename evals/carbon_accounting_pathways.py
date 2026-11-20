@@ -374,27 +374,6 @@ def national_totals(frame: pd.DataFrame, country: str) -> pd.DataFrame:
     return totals.unstack("evaluator").reindex(columns=list(EVALUATORS))
 
 
-def as_booked(totals: pd.DataFrame) -> pd.Series:
-    """
-    Return the national totals of every scenario as booked under its own method.
-
-    Carrier scenarios under ``CA_carrier``, technology scenarios under
-    ``CA_technology``.
-
-    Parameters
-    ----------
-    totals
-        Output of :func:`national_totals`.
-
-    Returns
-    -------
-    :
-        Mt CO2 indexed like ``totals``.
-    """
-    method = totals.index.get_level_values("method")
-    return totals[TECHNOLOGY].where(method == "technology", totals[CARRIER])
-
-
 def checks(networks: Networks) -> list[Check]:
     """
     Check the evaluators against the scenarios.
