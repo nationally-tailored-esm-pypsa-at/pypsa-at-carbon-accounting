@@ -427,9 +427,15 @@ def _(atmosphere, co2_import, kind_colors, layer_buses, mo, pd, show_labels):
         lines.append("}")
         return "\n".join(lines)
 
+    # graphviz is a pixi dependency; fail early instead of guessing from PATH
+    DOT = shutil.which("dot")
+    if DOT is None:
+        raise FileNotFoundError("Graphviz 'dot' not found, run inside the pixi env.")
+
     def render(dot, scope):
-        svg = subprocess.run(
-            [shutil.which("dot") or "dot", "-Tsvg"],
+        # fixed argv without a shell, the DOT source only reaches dot via stdin
+        svg = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+            [DOT, "-Tsvg"],
             input=dot,
             capture_output=True,
             text=True,
