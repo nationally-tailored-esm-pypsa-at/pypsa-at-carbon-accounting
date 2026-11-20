@@ -442,7 +442,7 @@ def link_categories(
     and the rest of their emission, which goes to the category of the link.
     Kerosene and kerosene claims are scaled with the domestic aviation share
     of their country, as the national CO2 budget does
-    (``mods.constraints.co2_budget``).
+    (``mods.carbon_accounting.budget``).
 
     Parameters
     ----------
@@ -531,7 +531,7 @@ def national_co2_categories(
 
     Selects links by name prefix and scales kerosene and kerosene claims with
     the domestic aviation share, as the national CO2 budget does
-    (``mods.constraints.co2_budget``), so the categories add up to the
+    (``mods.carbon_accounting.budget``), so the categories add up to the
     left-hand side of ``co2_limit-{country}``. Links that capture CO2 split
     into the capture credit (the CO2 captured) and the rest of their
     emission, which goes to the category of the link.

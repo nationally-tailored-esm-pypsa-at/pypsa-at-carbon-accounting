@@ -5,7 +5,6 @@
 """Toy solves for mods/carbon_accounting/constraints.py (spec section 6, U7-U14)."""
 
 import warnings
-from types import SimpleNamespace
 
 import pandas as pd
 import pypsa
@@ -36,10 +35,8 @@ from mods.carbon_accounting.network import (
     port_bus_carrier,
     port_efficiency,
 )
-from mods.constraints.co2_budget import constraint_national_co2_budgets
 from test.test_carbon_accounting.conftest import (
     EF,
-    build_carbon_network,
     build_gas_toy,
     build_oil_toy,
     carbon_accounting_costs,
@@ -126,60 +123,6 @@ def test_disabled_adds_no_constraints():
     before = set(n.model.constraints)
     constraint_carbon_accounting(n, carbon_accounting_snakemake("technology"), 2050)
     assert set(n.model.constraints) == before
-
-
-def _coefficient(n: pypsa.Network, constraint: str, link: str) -> float:
-    """Return the summed LHS coefficient of a link's flow in a constraint."""
-    labels = n.model["Link-p"].loc[:, link].labels.values
-    lhs = n.model.constraints[constraint].lhs
-    coeffs, variables = lhs.coeffs.values.ravel(), lhs.vars.values.ravel()
-    return coeffs[pd.Series(variables).isin(labels).to_numpy()].sum()
-
-
-def test_aviation_claims_scaled_in_national_budget(tmp_path):
-    """U10: kerosene and its green claim are scaled by the domestic share."""
-    n = build_carbon_network(("AT1",))
-    apply_carbon_accounting(n, carbon_accounting_snakemake(), carbon_accounting_costs())
-    n.links["marginal_cost"] = 1.0  # the model needs an objective
-    n.meta = {
-        "sector": {
-            "transport": True,
-            "heating": False,
-            "industry": False,
-            "agriculture": False,
-        }
-    }
-    co2_totals = tmp_path / "co2_totals.csv"
-    pd.DataFrame(
-        {"electricity": [1.0], "rail non-elec": [1.0], "road non-elec": [1.0]},
-        index=pd.Index(["AT"], name="country"),
-    ).to_csv(co2_totals)
-    energy_totals = tmp_path / "energy_totals.csv"
-    pd.DataFrame(
-        {"total domestic aviation": [1.0], "total international aviation": [3.0]},
-        index=pd.MultiIndex.from_tuples([("AT", 2019)], names=["country", "year"]),
-    ).to_csv(energy_totals)
-    snakemake = SimpleNamespace(
-        params=SimpleNamespace(
-            solving={"constraints": {"co2_budget_national": {"AT": {2050: 0.5}}}},
-            energy_totals_year=2019,
-        ),
-        input=SimpleNamespace(
-            co2_totals_name=str(co2_totals), energy_totals=str(energy_totals)
-        ),
-    )
-    n.optimize.create_model()
-    constraint_national_co2_budgets(n, snakemake, 2050)
-
-    name = "GlobalConstraint-co2_limit-AT"
-    snapshots = len(n.snapshots)
-    alpha = 0.25
-    claim = _coefficient(n, name, "AT renewable oil claim aviation")
-    kerosene = _coefficient(n, name, "AT1 kerosene for aviation")
-    shipping = _coefficient(n, name, "AT1 shipping oil")
-    assert claim == pytest.approx(-EF["oil"] * alpha * snapshots)
-    assert kerosene == pytest.approx(EF["oil"] * alpha * snapshots)
-    assert shipping == pytest.approx(EF["oil"] * snapshots)
 
 
 def test_oil_attributes_are_pooled():

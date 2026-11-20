@@ -9,38 +9,7 @@ import logging
 import pandas as pd
 import pypsa
 
-from mods.carbon_accounting.constants import AVIATION_CARRIERS
-
 logger = logging.getLogger(__name__)
-
-
-def _atmosphere_efficiency(links: pd.DataFrame) -> pd.Series:
-    """
-    Return the efficiency of each link at its ``co2 atmosphere`` port.
-
-    Parameters
-    ----------
-    links
-        Links with exactly one output port at ``co2 atmosphere``.
-
-    Returns
-    -------
-    :
-        Efficiency per link.
-
-    Raises
-    ------
-    ValueError
-        If a link has no or several output ports at ``co2 atmosphere``.
-    """
-    ports = links.columns[links.columns.str.fullmatch(r"bus[1-9]\d*")].str[3:]
-    at_atm = pd.DataFrame({p: links[f"bus{p}"] == "co2 atmosphere" for p in ports})
-    if not at_atm.sum(axis=1).eq(1).all():
-        raise ValueError(f"Expected one 'co2 atmosphere' port at {list(links.index)}.")
-    efficiency = pd.DataFrame(
-        {p: links["efficiency" if p == "1" else f"efficiency{p}"] for p in ports}
-    )
-    return efficiency.where(at_atm).sum(axis=1)
 
 
 def constraint_national_co2_budgets(
@@ -102,12 +71,12 @@ def constraint_national_co2_budgets(
         links = n.components.links.static
         link_ports = links.filter(like="bus").columns.str[3:]
         for port in link_ports:
-            # exclude aviation here to multiply it with a domestic factor later
-            idx = links.index[
-                links.index.str.startswith(ct)
-                & (links[f"bus{port}"] == "co2 atmosphere")
-                & ~links.carrier.isin(AVIATION_CARRIERS)
-            ]
+            idx = links.query(
+                f"name.str.startswith('{ct}') "
+                f"& bus{port} == 'co2 atmosphere' "
+                f"& carrier != 'kerosene for aviation'"
+                # exclude aviation here to multiply it with a domestic factor later
+            ).index
 
             logger.info(
                 f"For {ct} adding following link carriers to port {port} "
@@ -138,15 +107,14 @@ def constraint_national_co2_budgets(
             domestic_aviation_factor = 0.0
         else:
             domestic_aviation_factor = aviation_domestic / aviation_total
-        # kerosene and the claims of green kerosene (carbon accounting method
-        # 'carrier') are scaled alike
-        aviation_links = links[
-            links.index.str.startswith(ct) & links.carrier.isin(AVIATION_CARRIERS)
-        ]
+        aviation_links = links.query(
+            f"name.str.startswith('{ct}') & carrier == 'kerosene for aviation'"
+        )
         aviation_emissions = (
             n.model["Link-p"]
             .loc[:, aviation_links.index]
-            .mul(_atmosphere_efficiency(aviation_links))
+            # todo: test contract 'co2 atmosphere' at bus2 for aviation links
+            .mul(aviation_links["efficiency2"])
             .mul(weightings)
             .sum()
             .mul(domestic_aviation_factor)
