@@ -2,20 +2,20 @@
 #
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
-"""Unit tests for evals/carbon_accounting.py on toy networks."""
+"""Unit tests for evals/carbon_accounting/accounting.py on toy networks."""
 
 import numpy as np
 import pandas as pd
 import pypsa
 import pytest
 
-import mods.constants
-import mods.network.carbon_accounting
-from evals import carbon_accounting as ca
-from evals import carbon_accounting_pathways as cp
-from mods.constraints.carbon_accounting import constraint_carbon_accounting
-from mods.network.carbon_accounting import apply_carbon_accounting
-from test.test_mods.conftest import (
+import mods.carbon_accounting.constants
+import mods.carbon_accounting.network
+from evals.carbon_accounting import accounting as ca
+from evals.carbon_accounting import pathways as cp
+from mods.carbon_accounting.constraints import constraint_carbon_accounting
+from mods.carbon_accounting.network import apply_carbon_accounting
+from test.test_carbon_accounting.conftest import (
     EF,
     build_gas_toy,
     build_oil_toy,
@@ -113,12 +113,16 @@ def oil_carrier() -> pypsa.Network:
     ],
 )
 def test_carriers_mirror_mods_constants(name):
-    assert getattr(ca, name) == getattr(mods.constants, name)
+    assert getattr(ca, name) == getattr(mods.carbon_accounting.constants, name)
 
 
 def test_accounting_carriers_mirror_mods_constants():
-    assert ca.CLAIM_KINDS == {v: k for k, v in mods.constants.CLAIM_CARRIERS.items()}
-    assert set(ca.ATTRIBUTE_CARRIERS) == set(mods.constants.ATTRIBUTE_CARRIERS.values())
+    assert ca.CLAIM_KINDS == {
+        v: k for k, v in mods.carbon_accounting.constants.CLAIM_CARRIERS.items()
+    }
+    assert set(ca.ATTRIBUTE_CARRIERS) == set(
+        mods.carbon_accounting.constants.ATTRIBUTE_CARRIERS.values()
+    )
 
 
 class TestDiscovery:
@@ -545,7 +549,7 @@ class TestPhysicalResponse:
 
 def test_accounting_link_carriers_mirror_mods_constants():
     assert set(ca.ACCOUNTING_LINK_CARRIERS) == set(
-        mods.network.carbon_accounting.ACCOUNTING_LINK_CARRIERS
+        mods.carbon_accounting.network.ACCOUNTING_LINK_CARRIERS
     )
 
 

@@ -9,7 +9,7 @@ import logging
 import pandas as pd
 import pypsa
 
-from mods.constants import AVIATION_CARRIERS
+from mods.carbon_accounting.constants import AVIATION_CARRIERS
 
 logger = logging.getLogger(__name__)
 

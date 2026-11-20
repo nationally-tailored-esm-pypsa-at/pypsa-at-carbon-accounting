@@ -2,16 +2,21 @@
 #
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
-"""Unit tests for evals/carbon_accounting_pathways.py on toy networks."""
+"""Unit tests for evals/carbon_accounting/pathways.py on toy networks."""
 
 import pandas as pd
 import pypsa
 import pytest
 
-from evals import carbon_accounting as ca
-from evals import carbon_accounting_pathways as cp
-from test.test_evals.test_carbon_accounting import ALPHA, add_budget, oil_toy, solve
-from test.test_mods.conftest import EF, build_oil_toy
+from evals.carbon_accounting import accounting as ca
+from evals.carbon_accounting import pathways as cp
+from test.test_carbon_accounting.conftest import EF, build_oil_toy
+from test.test_carbon_accounting.test_evals.test_accounting import (
+    ALPHA,
+    add_budget,
+    oil_toy,
+    solve,
+)
 
 COUNTRIES = ("AT", "DE")
 

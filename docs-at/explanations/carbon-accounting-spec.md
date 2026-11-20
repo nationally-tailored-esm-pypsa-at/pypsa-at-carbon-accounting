@@ -1,8 +1,8 @@
 # Specification: Carbon Accounting Methods
 
 !!! note "Status: implemented"
-    Specification of the implementation in `mods/network/carbon_accounting.py` and
-    `mods/constraints/carbon_accounting.py`. AI-assisted draft. Decisions D0–D18 are
+    Specification of the implementation in `mods/carbon_accounting/network.py` and
+    `mods/carbon_accounting/constraints.py`. AI-assisted draft. Decisions D0–D18 are
     agreed with the author; team review is pending. Inventory and figures are taken from
     `resources/carbon-accounting/CA_base/networks/composed_{2025,2050}.nc` and
     `results/carbon-accounting/CA_base/networks/solved_2050.nc`.
@@ -70,7 +70,7 @@ This is how the model behaves today. It needs no changes and is the reference.
 ### 3.2 Link inventory and transformation rules
 
 Every link in the network falls into exactly one class. Classification goes by `carrier`.
-The lists live in `mods/constants.py`. A test fails if a link with a port at `co2 atmosphere`,
+The lists live in `mods/carbon_accounting/constants.py`. A test fails if a link with a port at `co2 atmosphere`,
 `co2 stored`, `gas`, `oil` or `methanol` has an unclassified carrier (fail early on upstream changes).
 
 Notation: `atm` = efficiency at the `co2 atmosphere` port (−1 for bus0), `stored` = efficiency
@@ -170,7 +170,7 @@ through a country bus first. The country buses balance per snapshot via the unbo
 distribution links, so they need no store.
 Only AT and DE have national budgets; the other countries' claims only matter for retirement (D14).
 
-**Annual constraints** (in `mods/constraints/carbon_accounting.py`). Let w_t be
+**Annual constraints** (in `mods/carbon_accounting/constraints.py`). Let w_t be
 `snapshot_weightings.generators` and `P(l) = Σ_t w_t · p0(l, t)`.
 
 1. **Claim bound (D4, D7)**, per country CT and fuel f:
@@ -296,11 +296,11 @@ all countries together equal G_f.
 
 **Implementation sketch.**
 
-- Compose (`mods/network/carbon_accounting.py`): `fair_share_keys(n)` computes `w` from the loads
+- Compose (`mods/carbon_accounting/network.py`): `fair_share_keys(n)` computes `w` from the loads
   and stores it in a new column `fair_share_key` of the claim links (NaN where no key applies).
   The column survives the netCDF round trip like the transformation marker. No new rule inputs.
   A budget country without fixed demand of a fuel gets key 0, so it can't claim that pool.
-- Solve (`mods/constraints/carbon_accounting.py`): for every claim link of a budget country with
+- Solve (`mods/carbon_accounting/constraints.py`): for every claim link of a budget country with
   a key, add `carbon_accounting-fair-share-{CT}-{kind}`. Guard: `fair_share.enable`.
 - Evals: `view_balance_carbon_claims` additionally shows the cap (`tolerance · w · G_f`) as a third
   group next to the claimed and EU-average credits.
@@ -360,7 +360,7 @@ mods:
 
 ### 5.1 Modules and functions
 
-`mods/network/carbon_accounting.py` (compose phase):
+`mods/carbon_accounting/network.py` (compose phase):
 
 ```python
 def apply_carbon_accounting(n: pypsa.Network, snakemake, costs: pd.DataFrame) -> None:
@@ -407,7 +407,7 @@ copies all static columns (`n.add(c.name, c.static.index, **c.static)`).
 - Fail early: a link carrier at a CO2 or fuel bus that is in no class raises a `ValueError`.
 - EF from the cost data that `modify_prenetwork` already loaded and passes in.
 
-`mods/constraints/carbon_accounting.py` (solve phase):
+`mods/carbon_accounting/constraints.py` (solve phase):
 
 ```python
 def constraint_carbon_accounting(n, snakemake, investment_year: int) -> None:
@@ -422,10 +422,10 @@ def constraint_carbon_accounting(n, snakemake, investment_year: int) -> None:
 add it scaled by α (the same code path as `kerosene for aviation`). In `technology` mode the
 carrier doesn't exist, so the change is a no-op.
 
-`mods/constants.py`: the carrier lists of 3.2 (`GREEN_BIO_PRODUCERS`, `GREEN_SYNTHETIC_PRODUCERS`,
+`mods/carbon_accounting/constants.py`: the carrier lists of 3.2 (`GREEN_BIO_PRODUCERS`, `GREEN_SYNTHETIC_PRODUCERS`,
 `GREEN_IMPORTS`, `CAPTURE`, `SEQUESTRATION`, `VENT`, `FUEL_TRANSPORT`) and the accounting carriers.
 
-`mods/constants.py`: also the marker column name.
+`mods/carbon_accounting/constants.py`: also the marker column name.
 
 `evals/`:
 
@@ -460,8 +460,8 @@ the total is the same as in `technology` (P5). No change is needed; a test verif
 
 ## 6. Test plan
 
-Unit tests on small synthetic networks (`test/test_mods/network/test_carbon_accounting.py`,
-`test/test_mods/constraints/test_carbon_accounting.py`):
+Unit tests on small synthetic networks (`test/test_carbon_accounting/test_mods/test_network.py`,
+`test/test_carbon_accounting/test_mods/test_constraints.py`):
 
 | # | Test | Asserts |
 |---|---|---|

@@ -4,10 +4,13 @@
 # For license information, see the LICENSE.txt file in the project root.
 """Expose view functions from inside the `views` module."""
 
+# --- START: Block Maintained by Carbon Accounting ---
+from evals.carbon_accounting.views import view_balance_carbon_claims
+
+# --- END: Block Maintained by Carbon Accounting ---
 from evals.views.balances import (
     view_balance_biomass,
     view_balance_carbon,
-    view_balance_carbon_claims,
     view_balance_electricity,
     view_balance_fuels,
     view_balance_heat,
@@ -56,7 +59,9 @@ __all__ = [
     # balances
     "view_balance_electricity",
     "view_balance_carbon",
+    # --- START: Block Maintained by Carbon Accounting ---
     "view_balance_carbon_claims",
+    # --- END: Block Maintained by Carbon Accounting ---
     "view_balance_heat",
     "view_balance_hydrogen",
     "view_balance_methane",

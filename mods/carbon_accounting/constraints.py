@@ -17,8 +17,12 @@ import pandas as pd
 import pypsa
 from linopy import LinearExpression
 
-from mods.constants import CLAIM_CARRIERS, FAIR_SHARE_KEY, FUEL_TRANSPORT
-from mods.network.carbon_accounting import (
+from mods.carbon_accounting.constants import (
+    CLAIM_CARRIERS,
+    FAIR_SHARE_KEY,
+    FUEL_TRANSPORT,
+)
+from mods.carbon_accounting.network import (
     CLAIMS,
     POOL,
     attribute_bus,
@@ -96,7 +100,7 @@ def claimable_consumers(n: pypsa.Network, ct: str, claim: str) -> pd.Index:
     ct
         Country code.
     claim
-        Claim kind, a key of :data:`mods.constants.CLAIM_CARRIERS`.
+        Claim kind, a key of :data:`mods.carbon_accounting.constants.CLAIM_CARRIERS`.
 
     Returns
     -------

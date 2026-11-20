@@ -6,11 +6,11 @@
 Carbon accounting comparison notebook (marimo).
 
 Compares any number of scenarios of the carbon accounting configuration for
-one country. All computations live in ``evals/carbon_accounting.py`` and
-``evals/carbon_accounting_pathways.py``; this file
+one country. All computations live in ``evals/carbon_accounting/accounting.py`` and
+``evals/carbon_accounting/pathways.py``; this file
 only does UI, caching and plotting. Run it from the repository root with
 
-    pixi run marimo edit evals/notebooks/carbon_accounting.py
+    pixi run marimo edit evals/carbon_accounting/notebooks/carbon_accounting.py
 
 Specification: ``docs-at/explanations/carbon-accounting-eval-spec.md``.
 """
@@ -32,12 +32,12 @@ def _():
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
-    REPO = Path(__file__).resolve().parents[2]
+    REPO = Path(__file__).resolve().parents[3]
     if str(REPO) not in sys.path:
         sys.path.insert(0, str(REPO))
 
-    from evals import carbon_accounting as ca
-    from evals import carbon_accounting_pathways as cp
+    from evals.carbon_accounting import accounting as ca
+    from evals.carbon_accounting import pathways as cp
 
     return REPO, ca, cp, go, make_subplots, mo, pd, px
 

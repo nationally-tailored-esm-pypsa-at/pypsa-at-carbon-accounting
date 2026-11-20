@@ -40,7 +40,7 @@ plotting:
     "": '#000000'
     none: '#000000'
     # accounting layer of the carrier-based carbon accounting
-    # (mods/network/carbon_accounting.py). Shades of the fuel colours.
+    # (mods/carbon_accounting/network.py). Shades of the fuel colours.
     renewable gas attribute: '#6ab04c'
     renewable gas attribute transfer: '#6ab04c'
     renewable gas claim: '#6ab04c'

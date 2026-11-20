@@ -17,13 +17,17 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 from mods import (
-    constraint_carbon_accounting,
     constraint_combined_solar_trajectories,
     constraint_national_co2_budgets,
     constraint_net_zero_electricity,
     constraint_ntc_flow_limits,
     constraint_production_targets,
 )
+
+# --- START: Block Maintained by Carbon Accounting ---
+from mods.carbon_accounting import constraint_carbon_accounting
+
+# --- END: Block Maintained by Carbon Accounting ---
 from mods.constraints.trajectories import constraint_generic_trajectories
 
 logger = logging.getLogger(__name__)
@@ -44,7 +48,9 @@ def additional_functionality(n, snapshots, snakemake):
 
     investment_year = int(snakemake.wildcards.horizon)
     constraint_national_co2_budgets(n, snakemake, investment_year)
+    # --- START: Block Maintained by Carbon Accounting ---
     constraint_carbon_accounting(n, snakemake, investment_year)
+    # --- END: Block Maintained by Carbon Accounting ---
     constraint_ntc_flow_limits(n, snakemake, investment_year)
     constraint_net_zero_electricity(n, snakemake, investment_year)
     constraint_combined_solar_trajectories(n, snakemake, investment_year)

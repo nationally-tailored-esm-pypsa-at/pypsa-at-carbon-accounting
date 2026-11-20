@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
-"""Toy solves for mods/constraints/carbon_accounting.py (spec section 6, U7-U14)."""
+"""Toy solves for mods/carbon_accounting/constraints.py (spec section 6, U7-U14)."""
 
 import warnings
 from types import SimpleNamespace
@@ -11,10 +11,11 @@ import pandas as pd
 import pypsa
 import pytest
 
+from evals.carbon_accounting.utils import scale_domestic_aviation
 from evals.constants import DataModel
 from evals.stats import collect_myopic_statistics
-from evals.utils import get_energy_totals_domestic_share, scale_domestic_aviation
-from mods.constants import (
+from evals.utils import get_energy_totals_domestic_share
+from mods.carbon_accounting.constants import (
     ATTRIBUTE_CARRIERS,
     AVIATION_CARRIERS,
     CAPTURE,
@@ -23,12 +24,11 @@ from mods.constants import (
     GREEN_BIO_PRODUCERS,
     GREEN_IMPORTS,
 )
-from mods.constraints.carbon_accounting import (
+from mods.carbon_accounting.constraints import (
     claimable_consumers,
     constraint_carbon_accounting,
 )
-from mods.constraints.co2_budget import constraint_national_co2_budgets
-from mods.network.carbon_accounting import (
+from mods.carbon_accounting.network import (
     TRANSFORMATION_CLASSES,
     apply_carbon_accounting,
     gas_borders,
@@ -36,7 +36,8 @@ from mods.network.carbon_accounting import (
     port_bus_carrier,
     port_efficiency,
 )
-from test.test_mods.conftest import (
+from mods.constraints.co2_budget import constraint_national_co2_budgets
+from test.test_carbon_accounting.conftest import (
     EF,
     build_carbon_network,
     build_gas_toy,

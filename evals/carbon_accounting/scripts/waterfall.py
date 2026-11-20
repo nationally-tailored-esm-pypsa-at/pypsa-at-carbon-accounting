@@ -5,12 +5,12 @@
 """
 Publication figure (German) of the national balance bridge between two runs.
 
-Takes the waterfall of section 2 of ``evals/notebooks/carbon_accounting.py``
+Takes the waterfall of section 2 of ``evals/carbon_accounting/notebooks/carbon_accounting.py``
 and renders it for one horizon and one pair of scenarios, without the split
 into physical and accounting steps. The claims on oil, kerosene and methanol
 are merged into one step. Run it from the repository root with
 
-    pixi run python evals/scripts/carbon_accounting_waterfall.py
+    pixi run python evals/carbon_accounting/scripts/waterfall.py
 """
 
 import argparse
@@ -22,11 +22,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import pypsa
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from evals import carbon_accounting as ca  # noqa: E402
+from evals.carbon_accounting import accounting as ca  # noqa: E402
 
 TITLE = "Unterschied technologiebasierter Ansatz → energieträgerbasierter Ansatz"
 TOTAL_LABELS = (

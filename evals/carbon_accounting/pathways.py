@@ -5,7 +5,7 @@
 """
 Evaluate the emissions of any scenario under every carbon accounting method.
 
-Backs the notebook ``evals/notebooks/carbon_accounting_pathways.py``. A
+Backs the notebook ``evals/carbon_accounting/notebooks/carbon_accounting_pathways.py``. A
 scenario is optimised under one method, but its flows can be evaluated ex
 post under either method (the *evaluator*). Both evaluators read the same
 network elements of a run; they differ only in the coefficients of the green
@@ -26,8 +26,8 @@ have (the claim links of a technology run) counts as 0.
     at the consumer.
 
 Emissions are split into the categories of the national balance bridge
-(:data:`evals.carbon_accounting.CATEGORIES`) by
-:func:`evals.carbon_accounting.link_categories`, so both notebooks use the
+(:data:`evals.carbon_accounting.accounting.CATEGORIES`) by
+:func:`evals.carbon_accounting.accounting.link_categories`, so both notebooks use the
 same categories. National totals follow the national CO2 budget (name prefix,
 kerosene and kerosene claims scaled by the domestic aviation share).
 """
@@ -37,7 +37,7 @@ from collections.abc import Mapping
 import pandas as pd
 import pypsa
 
-from evals.carbon_accounting import (
+from evals.carbon_accounting.accounting import (
     CATEGORIES,
     FUELS,
     GAS_TRANSPORT,
@@ -56,7 +56,7 @@ from evals.carbon_accounting import (
     national_categories,
     port_flows,
 )
-from evals.constants import FUEL_CLAIM_CARRIERS
+from evals.carbon_accounting.constants import FUEL_CLAIM_CARRIERS
 
 Networks = Mapping[str, Mapping[str, pypsa.Network]]
 
@@ -79,7 +79,7 @@ def link_table(n: pypsa.Network, flows: pd.DataFrame | None = None) -> pd.DataFr
     n
         A solved network.
     flows
-        Port flows of ``n``, see :func:`evals.carbon_accounting.port_flows`.
+        Port flows of ``n``, see :func:`evals.carbon_accounting.accounting.port_flows`.
 
     Returns
     -------
@@ -130,7 +130,7 @@ def link_table(n: pypsa.Network, flows: pd.DataFrame | None = None) -> pd.DataFr
     is_claim = links.carrier.isin(FUEL_CLAIM_CARRIERS)
     table["claim"] = claim.where(~is_claim, links.carrier)
     table["is_claim"] = is_claim
-    # links transformed by the carrier method (marker of mods.network.carbon_accounting)
+    # links transformed by the carrier method (marker of mods.carbon_accounting.network)
     marker = links.get("carbon_accounting", pd.Series("", index=links.index))
     table["transformed"] = marker.fillna("").eq("carrier")
     return table
@@ -219,7 +219,7 @@ def evaluate(
     evaluator
         One of :data:`EVALUATORS`.
     flows
-        Port flows of ``n``, see :func:`evals.carbon_accounting.port_flows`;
+        Port flows of ``n``, see :func:`evals.carbon_accounting.accounting.port_flows`;
         computed if missing.
     table
         Output of :func:`link_table`; computed if missing.
@@ -230,7 +230,7 @@ def evaluate(
     Returns
     -------
     :
-        Rows as :func:`evals.carbon_accounting.link_categories`, in t CO2.
+        Rows as :func:`evals.carbon_accounting.accounting.link_categories`, in t CO2.
     """
     flows = port_flows(n) if flows is None else flows
     table = link_table(n, flows) if table is None else table
@@ -254,7 +254,7 @@ def evaluated_categories(
     coefficients of the method ``technology``: biofuel producers get their
     credit back, synthetic fuel producers book nothing, green imports draw
     from the atmosphere and claims vanish. A technology scenario comes out as
-    :func:`evals.carbon_accounting.national_co2_categories`.
+    :func:`evals.carbon_accounting.accounting.national_co2_categories`.
 
     Parameters
     ----------
@@ -270,7 +270,7 @@ def evaluated_categories(
     Returns
     -------
     :
-        t CO2 per category of :data:`evals.carbon_accounting.CATEGORIES`.
+        t CO2 per category of :data:`evals.carbon_accounting.accounting.CATEGORIES`.
     """
     return national_categories(evaluate(n, evaluator, flows), country)
 
@@ -279,7 +279,7 @@ def evaluated_bridge(networks: Networks, country: str, evaluator: str) -> pd.Dat
     """
     Return the national CO2 balance per category of every scenario, under an evaluator.
 
-    Same layout as :func:`evals.carbon_accounting.balance_bridge`; with
+    Same layout as :func:`evals.carbon_accounting.accounting.balance_bridge`; with
     ``CA_technology``, technology scenarios give the same rows and carrier
     scenarios show their flows booked as ``CA_technology``.
 
@@ -547,7 +547,7 @@ def category_pathway(
     -------
     :
         Mt CO2, indexed by ``horizon``, one column per category in the order
-        of :data:`evals.carbon_accounting.CATEGORIES`.
+        of :data:`evals.carbon_accounting.accounting.CATEGORIES`.
     """
     index = frame.index
     rows = frame[
