@@ -5,8 +5,9 @@
 """
 Carbon accounting comparison notebook (marimo).
 
-Compares any number of runs of the carbon accounting configuration for one
-country. All computations live in ``evals/carbon_accounting.py``; this file
+Compares any number of scenarios of the carbon accounting configuration for
+one country. All computations live in ``evals/carbon_accounting.py`` and
+``evals/carbon_accounting_pathways.py``; this file
 only does UI, caching and plotting. Run it from the repository root with
 
     pixi run marimo edit evals/notebooks/carbon_accounting.py
@@ -36,8 +37,9 @@ def _():
         sys.path.insert(0, str(REPO))
 
     from evals import carbon_accounting as ca
+    from evals import carbon_accounting_pathways as cp
 
-    return REPO, ca, go, make_subplots, mo, pd, px
+    return REPO, ca, cp, go, make_subplots, mo, pd, px
 
 
 @app.cell
@@ -118,7 +120,7 @@ def _(mo):
     mo.md(r"""
     # Carbon accounting comparison
 
-    Compares runs of the carbon accounting configuration for one country. Every Δ is
+    Compares scenarios of the carbon accounting configuration for one country. Every Δ is
     measured against the **reference** scenario. Steps that fail a check stop the
     steps after them. Specification: `docs-at/explanations/carbon-accounting-eval-spec.md`.
     """)
@@ -148,7 +150,7 @@ def _(PALETTE, ca, mo, root_input):
     info = ca.run_info(files)
     colours = {s: PALETTE[i % len(PALETTE)] for i, s in enumerate(files)}
     scenario_select = mo.ui.multiselect(
-        options=list(files), value=list(files), label="Scenarios"
+        options=list(files), value=ca.default_scenarios(info), label="Scenarios"
     )
     countries = sorted({c for b in info.budgets for c in b.split(", ") if c} | {"AT"})
     country_select = mo.ui.dropdown(options=countries, value="AT", label="Country")
@@ -196,7 +198,7 @@ def _(badge, ca, country_select, info, mo, reference_select, scenario_select):
 
 
 @app.cell
-def _(ca, mo):
+def _(ca, cp, mo):
     @mo.cache
     def load(path: str) -> dict:
         """Load the solved networks of one scenario, once."""
@@ -208,7 +210,7 @@ def _(ca, mo):
         networks = {scenario: load(path)}
         return {
             "bridge": ca.balance_bridge(networks, country),
-            "technology": ca.technology_bridge(networks, country),
+            "technology": cp.evaluated_bridge(networks, country, cp.TECHNOLOGY),
             "consistency": ca.consistency(networks, country),
             "target": ca.target_cost(networks, country),
             "physical": ca.physical_response(networks, country),
@@ -432,20 +434,20 @@ def _(
             mo.md(
                 "## 2b System response and method\n\n"
                 "The accounting steps of section 2 mix two effects: the system runs "
-                "differently, and the method books the same flows differently. Every run "
-                "is therefore also booked with the coefficients of the method "
-                "`technology` (the carrier transformation inverted: biofuel producers "
-                "get their credit back, synthetic fuel producers book nothing, green "
-                "imports draw from the atmosphere, claims vanish). Per category:\n\n"
-                "- **flows** (blue) = B under technology rules − A under technology "
-                "rules: the system response, valued with technology coefficients\n"
-                "- **method** (orange) = (B as booked − B under technology rules) − "
-                "(A as booked − A under technology rules): the change of the "
+                "differently, and the method books the same flows differently. Every "
+                "scenario is therefore also evaluated as `CA_technology` (the carrier "
+                "transformation inverted: biofuel producers get their credit back, "
+                "synthetic fuel producers book nothing, green imports draw from the "
+                "atmosphere, claims vanish; see the pathways notebook). Per category:\n\n"
+                "- **flows** (blue) = B as `CA_technology` − A as `CA_technology`: "
+                "the system response, valued with technology coefficients\n"
+                "- **method** (orange) = (B as booked − B as `CA_technology`) − "
+                "(A as booked − A as `CA_technology`): the change of the "
                 "coefficients at fixed flows\n\n"
                 "The grey bar *after system response* is A plus all flow steps. "
                 "Fuel use, process & waste and capture credit have no method part. "
-                "Captured CO2 used in synthetic fuels and the claims do not exist under "
-                "technology rules, so in this order they have no flow part: their flow "
+                "Captured CO2 used in synthetic fuels and the claims do not exist in "
+                "`CA_technology`, so in this order they have no flow part: their flow "
                 "changes show up in the physical categories. Uses the horizon and "
                 "scenarios selected in section 2."
                 "\n\n---\n\n"
@@ -780,7 +782,7 @@ def _(
     layout(_money, f"{country}: money through the attribute pools", "bn €/a")
     _money.update_layout(barmode="relative", height=440)
 
-    # 4.4 net transfer of every country in one run
+    # 4.4 net transfer of every country in one scenario
     _scenario = transfer_scenario.value
     _has_trade = (_scenario, _horizon) in transfers.index.droplevel("country")
     if _has_trade:
@@ -829,7 +831,7 @@ def _(
                 "their sum is determined. These attributes are shown as *price not unique* "
                 "and left out of the money flows "
                 f"({_unpriced_share.min():.0%}–{_unpriced_share.max():.0%} of all attributes "
-                "per run). Step 3 values fuel and attribute together, whose sum is unique."
+                "per scenario). Step 3 values fuel and attribute together, whose sum is unique."
             ),
             kind="warn",
         )
@@ -900,7 +902,7 @@ def _(
             mo.ui.plotly(_money),
             mo.md(
                 "### 4.4 Who pays whom in Europe\n\n"
-                "Net transfer per country in one run. *Imports (outside Europe)* are the "
+                "Net transfer per country in one scenario. *Imports (outside Europe)* are the "
                 "green imports, which sell attributes but claim none. The transfers add up "
                 "to zero."
             ),

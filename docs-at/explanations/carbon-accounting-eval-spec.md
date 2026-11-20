@@ -100,9 +100,9 @@ Step order: total A → Δ fuel use → Δ process & waste → Δ capture credit
 ## (2b) System response and method
 
 The accounting steps of (2) mix two effects: the system runs differently, and the method books
-the same flows differently. Every run is also booked under **technology rules**: its flows with the
-coefficients of the method `technology` (`technology_bridge`; the carrier transformation is
-inverted with `evals.carbon_accounting_pathways.technology_emissions`). With `E_m(f)` the
+the same flows differently. Every scenario is also evaluated as **`CA_technology`**: its flows with
+the coefficients of the method `technology` (`evals.carbon_accounting_pathways.evaluated_bridge`;
+the carrier transformation is inverted with `technology_emissions`). With `E_m(f)` the
 categories of flows `f` under method `m` and `E(f)` the categories as booked in the run, the
 change of every category from A to B splits into (`bridge_decomposition`):
 
@@ -113,10 +113,11 @@ The parts add up exactly to the change in (2). `decomposed_waterfall` shows all 
 intermediate total *after system response*, then all method steps.
 
 - Fuel use, process & waste and capture credit have no method part, by construction.
-- Captured CO2 used in synthetic fuels and the claims are 0 under technology rules, so they have
+- Captured CO2 used in synthetic fuels and the claims are 0 in `CA_technology`, so they have
   no flow part in this order; their flow changes show up in the physical categories.
-- The order is a choice: technology rules are a pure function of the flows. The reverse order
-  would need claims for a technology run, i.e. an allocation rule (e.g. the EU average).
+- The order is a choice: `CA_technology` is a pure function of the flows. The reverse order
+  (`CA_carrier` coefficients) would value a technology run without claims, since it has no
+  claim links, so its green fuels would count as fossil at the consumer.
 
 ## (3) Cost of the national target
 

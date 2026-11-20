@@ -3,39 +3,42 @@
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
 """
-Evaluate the emissions of any run under every carbon accounting method.
+Evaluate the emissions of any scenario under every carbon accounting method.
 
-Backs the notebook ``evals/notebooks/carbon_accounting_pathways.py``. A run is
-optimised under one method (its *run method*), but its physical flows can be
-evaluated ex post under any method (the *evaluator*):
+Backs the notebook ``evals/notebooks/carbon_accounting_pathways.py``. A
+scenario is optimised under one method, but its flows can be evaluated ex
+post under either method (the *evaluator*). Both evaluators read the same
+network elements of a run; they differ only in the coefficients of the green
+producers, the green imports and the claim links. An element a run does not
+have (the claim links of a technology run) counts as 0.
 
-``technology``
-    The technology that releases CO2 books it; green fuel producers book
-    ``-EF`` at creation. A pure function of the physical flows, so it applies
-    to every run. For carrier runs, the transformation of the spec (section
-    3.2) is inverted: ``atm_technology = atm_carrier - EF_out * out - used``,
-    green imports draw ``p0`` from the atmosphere, and claims vanish.
-``carrier (optimised)``
-    The emissions as booked in the run, with the claims chosen by the
-    optimiser. Only defined for runs with the method ``carrier``.
-``carrier (EU average)``
-    The carrier rules applied ex post, with an allocation rule for the green
-    attributes: every consumer of a fuel gets the EU-wide green share of that
-    fuel. Applies to every run.
+``CA_technology``
+    The technology that releases CO2 books it; biofuel producers book
+    ``-EF`` at creation, green imports draw their carbon from the atmosphere,
+    claims count 0. For carrier scenarios, the transformation of the spec
+    (section 3.2) is inverted: ``atm_technology = atm_carrier - EF_out * out
+    - used``.
+``CA_carrier``
+    Green producers book no creation credit, synthetic fuel producers book
+    the CO2 they use, green imports book 0, and the claim links book the
+    claims of the run. Reproduces a carrier scenario as booked; a
+    technology scenario has no claims, so its green fuels count as fossil
+    at the consumer.
 
-Claims are spread onto the consuming links of the claiming country in
-proportion to their consumption, so emissions can be shown by sector. The
-national totals stay those of the national CO2 budget (name prefix, kerosene
-and kerosene claims scaled by the domestic aviation share).
+Emissions are split into the categories of the national balance bridge
+(:data:`evals.carbon_accounting.CATEGORIES`) by
+:func:`evals.carbon_accounting.link_categories`, so both notebooks use the
+same categories. National totals follow the national CO2 budget (name prefix,
+kerosene and kerosene claims scaled by the domestic aviation share).
 """
 
 from collections.abc import Mapping
 
-import numpy as np
 import pandas as pd
 import pypsa
 
 from evals.carbon_accounting import (
+    CATEGORIES,
     FUELS,
     GAS_TRANSPORT,
     GREEN_BIO_PRODUCERS,
@@ -43,52 +46,28 @@ from evals.carbon_accounting import (
     GREEN_SYNTHETIC_PRODUCERS,
     MT,
     REL_TOL,
-    VENT,
     Check,
+    _country_frame,
     _method,
-    domestic_aviation_share,
+    bridge_row,
     emission_factors,
+    link_categories,
     national_budget,
-    national_co2_categories,
+    national_categories,
     port_flows,
 )
-from evals.constants import AVIATION_CARRIERS, FUEL_CLAIM_CARRIERS
+from evals.constants import FUEL_CLAIM_CARRIERS
 
 Networks = Mapping[str, Mapping[str, pypsa.Network]]
 
-TECHNOLOGY = "technology"
-CARRIER_OPTIMISED = "carrier (optimised)"
-CARRIER_AVERAGE = "carrier (EU average)"
-EVALUATORS: tuple[str, ...] = (TECHNOLOGY, CARRIER_OPTIMISED, CARRIER_AVERAGE)
+TECHNOLOGY = "CA_technology"
+CARRIER = "CA_carrier"
+EVALUATORS: tuple[str, ...] = (TECHNOLOGY, CARRIER)
 GREEN_PRODUCERS: tuple[str, ...] = (
     *GREEN_BIO_PRODUCERS,
     *GREEN_SYNTHETIC_PRODUCERS,
     *GREEN_IMPORTS,
 )
-EU = "EU"
-
-# sectors of the pathway charts, checked in order; the first match wins
-SECTORS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Fuel supply", (*GREEN_PRODUCERS, "oil refining")),
-    ("DAC & vent", ("DAC", *VENT)),
-    ("Transport", ("land transport", "shipping", "aviation", "methanol-to-kerosene")),
-    ("Agriculture", ("agriculture",)),
-    ("Waste", ("waste", "municipal solid waste")),
-    ("Heat", ("boiler", "CHP")),
-    (
-        "Industry",
-        ("industry", "process emissions", "HVC", "naphtha", "SMR", "steam reforming"),
-    ),
-    ("Power", ("CCGT", "OCGT", "coal", "lignite", "nuclear", "allam", "oil")),
-)
-
-
-def sector(carrier: str) -> str:
-    """Return the sector of a link carrier, ``Other`` if none matches."""
-    for name, keys in SECTORS:
-        if carrier in keys or any(key in carrier for key in keys):
-            return name
-    return "Other"
 
 
 def link_table(n: pypsa.Network, flows: pd.DataFrame | None = None) -> pd.DataFrame:
@@ -106,7 +85,7 @@ def link_table(n: pypsa.Network, flows: pd.DataFrame | None = None) -> pd.DataFr
     -------
     :
         One row per link with ``carrier``, ``country`` (name prefix),
-        ``sector``, ``native`` (t CO2 booked at ``co2 atmosphere`` in the
+        ``native`` (t CO2 booked at ``co2 atmosphere`` in the
         run), ``fuel_out`` and ``out`` (green fuel output of producers, MWh),
         ``used`` (CO2 taken from ``co2 stored`` by synthetic fuel producers,
         t), ``p0`` (MWh or t), ``fuel_in`` (the fuel consumed at ``bus0``, empty
@@ -120,7 +99,6 @@ def link_table(n: pypsa.Network, flows: pd.DataFrame | None = None) -> pd.DataFr
         {
             "carrier": links.carrier,
             "country": links.index.str[:2],
-            "sector": links.carrier.map(sector),
         },
         index=links.index,
     )
@@ -193,10 +171,12 @@ def technology_emissions(table: pd.DataFrame, ef: dict[str, float]) -> pd.Series
 
 def carrier_emissions(table: pd.DataFrame, ef: dict[str, float]) -> pd.Series:
     """
-    Return the emissions of every link under the carrier rules, before claims.
+    Return the emissions of every link under the carrier rules.
 
     Bio-fuel producers lose their creation credit, synthetic fuel producers
     book the CO2 they use and green imports book zero (spec section 3.2).
+    Claim links book the claims of the run; a run without claim links has
+    none.
 
     Parameters
     ----------
@@ -208,7 +188,7 @@ def carrier_emissions(table: pd.DataFrame, ef: dict[str, float]) -> pd.Series:
     Returns
     -------
     :
-        Emissions per link in t, claims are 0.
+        Emissions per link in t.
     """
     emissions = technology_emissions(table, ef)
     carrier = table.carrier
@@ -218,57 +198,19 @@ def carrier_emissions(table: pd.DataFrame, ef: dict[str, float]) -> pd.Series:
     is_synthetic = carrier.isin(GREEN_SYNTHETIC_PRODUCERS)
     emissions[is_synthetic] += table.used[is_synthetic]
     emissions[carrier.isin(GREEN_IMPORTS)] = 0.0
+    emissions[table.is_claim] = table.native[table.is_claim]
     return emissions
-
-
-def green_shares(table: pd.DataFrame, rule: str) -> pd.Series:
-    """
-    Return the share of green fuel that each consumer link claims.
-
-    Parameters
-    ----------
-    table
-        Output of :func:`link_table`.
-    rule
-        ``optimised``: the claims of the run, spread over the consumers of
-        the claiming country in proportion to their consumption.
-        ``average``: the EU-wide green share of each fuel for every consumer.
-
-    Returns
-    -------
-    :
-        Share between 0 and 1 per consumer link, 0 elsewhere.
-    """
-    consumers = table[table.fuel_in != ""]
-    consumption = consumers.p0.groupby([consumers.country, consumers.claim]).sum()
-    if rule == "optimised":
-        claims = table[table.is_claim]
-        claimed = claims.p0.groupby([claims.country, claims.carrier]).sum()
-        claimed.index.names = consumption.index.names
-        share = (claimed / consumption.replace(0.0, np.nan)).reindex(consumption.index)
-        keys = pd.MultiIndex.from_frame(consumers[["country", "claim"]])
-        values = share.reindex(keys).fillna(0.0).to_numpy()
-    elif rule == "average":
-        green = table[table.fuel_out != ""].out.groupby(table.fuel_out).sum()
-        total = consumers.p0.groupby(consumers.fuel_in).sum()
-        share = (green / total.replace(0.0, np.nan)).reindex(list(FUELS)).fillna(0.0)
-        values = consumers.fuel_in.map(share).to_numpy()
-    else:
-        raise ValueError(f"Unknown allocation rule '{rule}'.")
-    return pd.Series(values, index=consumers.index).reindex(table.index, fill_value=0.0)
 
 
 def evaluate(
     n: pypsa.Network,
     evaluator: str,
+    flows: pd.DataFrame | None = None,
     table: pd.DataFrame | None = None,
     scaled: bool = True,
-) -> pd.Series:
+) -> pd.DataFrame:
     """
-    Return the emissions of every link of a run under an evaluator, in t.
-
-    Kerosene for aviation and its claims are scaled by the domestic aviation
-    share of the link's country, as in the national CO2 budget.
+    Return the emissions of every link of a scenario under an evaluator, by category.
 
     Parameters
     ----------
@@ -276,6 +218,9 @@ def evaluate(
         A solved network.
     evaluator
         One of :data:`EVALUATORS`.
+    flows
+        Port flows of ``n``, see :func:`evals.carbon_accounting.port_flows`;
+        computed if missing.
     table
         Output of :func:`link_table`; computed if missing.
     scaled
@@ -285,36 +230,84 @@ def evaluate(
     Returns
     -------
     :
-        Emissions per link, all NaN for ``carrier (optimised)`` on a run
-        without claims.
+        Rows as :func:`evals.carbon_accounting.link_categories`, in t CO2.
     """
-    table = link_table(n) if table is None else table
+    flows = port_flows(n) if flows is None else flows
+    table = link_table(n, flows) if table is None else table
     ef = emission_factors(n)
     if evaluator == TECHNOLOGY:
-        emissions = technology_emissions(table, ef)
-    elif evaluator in (CARRIER_OPTIMISED, CARRIER_AVERAGE):
-        if evaluator == CARRIER_OPTIMISED and not table.is_claim.any():
-            return pd.Series(np.nan, index=table.index)
-        rule = "optimised" if evaluator == CARRIER_OPTIMISED else "average"
-        share = green_shares(table, rule)
-        credit = table.fuel_in.map(ef).fillna(0.0) * table.p0 * share
-        emissions = carrier_emissions(table, ef) - credit
+        emitted = technology_emissions(table, ef)
+    elif evaluator == CARRIER:
+        emitted = carrier_emissions(table, ef)
     else:
         raise ValueError(f"Unknown evaluator '{evaluator}'.")
-    if not scaled:
-        return emissions
+    return link_categories(n, emitted, flows, scaled=scaled)
 
-    is_aviation = table.carrier.isin(AVIATION_CARRIERS)
-    alpha = {
-        ct: domestic_aviation_share(n, ct) for ct in table.country[is_aviation].unique()
-    }
-    scale = table.country.map(alpha).where(is_aviation, 1.0).fillna(1.0)
-    return emissions * scale
+
+def evaluated_categories(
+    n: pypsa.Network, country: str, evaluator: str, flows: pd.DataFrame | None = None
+) -> pd.Series:
+    """
+    Return the national CO2 balance of a country per category, under an evaluator.
+
+    ``CA_technology`` keeps the flows of the scenario and books them with the
+    coefficients of the method ``technology``: biofuel producers get their
+    credit back, synthetic fuel producers book nothing, green imports draw
+    from the atmosphere and claims vanish. A technology scenario comes out as
+    :func:`evals.carbon_accounting.national_co2_categories`.
+
+    Parameters
+    ----------
+    n
+        A solved network.
+    country
+        Country code.
+    evaluator
+        One of :data:`EVALUATORS`.
+    flows
+        Port flows of ``n``; computed if missing.
+
+    Returns
+    -------
+    :
+        t CO2 per category of :data:`evals.carbon_accounting.CATEGORIES`.
+    """
+    return national_categories(evaluate(n, evaluator, flows), country)
+
+
+def evaluated_bridge(networks: Networks, country: str, evaluator: str) -> pd.DataFrame:
+    """
+    Return the national CO2 balance per category of every scenario, under an evaluator.
+
+    Same layout as :func:`evals.carbon_accounting.balance_bridge`; with
+    ``CA_technology``, technology scenarios give the same rows and carrier
+    scenarios show their flows booked as ``CA_technology``.
+
+    Parameters
+    ----------
+    networks
+        Solved networks per horizon per scenario.
+    country
+        Country code.
+    evaluator
+        One of :data:`EVALUATORS`.
+
+    Returns
+    -------
+    :
+        Mt CO2 with one column per category, plus ``Total`` and ``Budget``,
+        indexed by ``scenario`` and ``horizon``.
+    """
+
+    def bridge(n: pypsa.Network) -> pd.Series:
+        return bridge_row(evaluated_categories(n, country, evaluator), n, country)
+
+    return _country_frame(networks, bridge)
 
 
 def emissions(networks: Networks) -> pd.DataFrame:
     """
-    Return the emissions of every run under every evaluator, by country and sector.
+    Return the emissions of every scenario under every evaluator, by country and category.
 
     Parameters
     ----------
@@ -324,43 +317,38 @@ def emissions(networks: Networks) -> pd.DataFrame:
     Returns
     -------
     :
-        Columns ``run method`` and ``emissions`` (Mt CO2), indexed by
-        ``scenario``, ``horizon``, ``evaluator``, ``country`` and ``sector``.
-        The country ``EU`` holds the links without a country prefix. Empty
-        rows for ``carrier (optimised)`` on technology runs are left out.
+        Columns ``method`` (of the scenario) and ``emissions`` (Mt CO2),
+        indexed by ``scenario``, ``horizon``, ``evaluator``, ``country`` and
+        ``category``. The country ``EU`` holds the links without a country
+        prefix.
     """
     frames = []
     for scenario, horizons in networks.items():
         for horizon, n in horizons.items():
-            table = link_table(n)
+            flows = port_flows(n)
+            table = link_table(n, flows)
             for evaluator in EVALUATORS:
-                values = evaluate(n, evaluator, table)
-                if values.isna().all():
-                    continue
-                grouped = values.groupby([table.country, table.sector]).sum() / MT
+                values = evaluate(n, evaluator, flows, table)
+                grouped = values.groupby(["country", "category"]).emissions.sum() / MT
                 frame = grouped.rename("emissions").reset_index()
                 frames.append(
                     frame.assign(
                         scenario=scenario,
                         horizon=horizon,
                         evaluator=evaluator,
-                        **{"run method": _method(n.meta)[0]},
+                        method=_method(n.meta)[0],
                     )
                 )
     frame = pd.concat(frames, ignore_index=True)
-    index = ["scenario", "horizon", "evaluator", "country", "sector"]
-    return frame.set_index(index)[["run method", "emissions"]]
+    index = ["scenario", "horizon", "evaluator", "country", "category"]
+    return frame.set_index(index)[["method", "emissions"]]
 
 
 def budgets(networks: Networks, countries: list[str]) -> pd.DataFrame:
-    """Return the national CO2 budgets in Mt, indexed by ``horizon``, one column per country."""
-    first = next(iter(networks.values()))
-    return pd.DataFrame(
-        {
-            ct: {h: national_budget(n, ct) / MT for h, n in first.items()}
-            for ct in countries
-        }
-    ).rename_axis("horizon")
+    """Return the national CO2 budgets in Mt, indexed by ``scenario`` and ``horizon``, one column per country."""
+    return _country_frame(
+        networks, lambda n: {ct: national_budget(n, ct) / MT for ct in countries}
+    )
 
 
 def national_totals(frame: pd.DataFrame, country: str) -> pd.DataFrame:
@@ -377,22 +365,21 @@ def national_totals(frame: pd.DataFrame, country: str) -> pd.DataFrame:
     Returns
     -------
     :
-        Mt CO2, indexed by ``scenario``, ``run method`` and ``horizon``;
-        NaN where an evaluator does not apply.
+        Mt CO2, indexed by ``scenario``, ``method`` and ``horizon``.
     """
     rows = frame.xs(country, level="country")
     totals = rows.groupby(
-        ["scenario", "run method", "horizon", "evaluator"]
+        ["scenario", "method", "horizon", "evaluator"]
     ).emissions.sum()
     return totals.unstack("evaluator").reindex(columns=list(EVALUATORS))
 
 
-def own_method(totals: pd.DataFrame) -> pd.Series:
+def as_booked(totals: pd.DataFrame) -> pd.Series:
     """
-    Return the national totals of every run under its own method.
+    Return the national totals of every scenario as booked under its own method.
 
-    Carrier runs are evaluated with their optimised claims, technology runs
-    with the technology method.
+    Carrier scenarios under ``CA_carrier``, technology scenarios under
+    ``CA_technology``.
 
     Parameters
     ----------
@@ -404,59 +391,49 @@ def own_method(totals: pd.DataFrame) -> pd.Series:
     :
         Mt CO2 indexed like ``totals``.
     """
-    method = totals.index.get_level_values("run method")
-    return totals[TECHNOLOGY].where(method == "technology", totals[CARRIER_OPTIMISED])
+    method = totals.index.get_level_values("method")
+    return totals[TECHNOLOGY].where(method == "technology", totals[CARRIER])
 
 
-def checks(
-    networks: Networks, frame: pd.DataFrame, countries: list[str]
-) -> list[Check]:
+def checks(networks: Networks) -> list[Check]:
     """
-    Check the evaluators against the runs.
+    Check the evaluators against the scenarios.
 
-    - The technology evaluator reproduces every link of a technology run.
-    - The optimised carrier evaluator reproduces the national budget LHS of
-      carrier runs (spreading the claims over consumers keeps the totals).
-    - All evaluators give the same EU total per run (P5); computed without
-      the aviation scaling, which is national.
+    - ``CA_technology`` reproduces every link of a technology scenario.
+    - ``CA_carrier`` reproduces every link of a carrier scenario.
+    - Both evaluators give the same EU total for a carrier scenario (P5);
+      computed without the aviation scaling, which is national. A
+      technology scenario has no claims, so its green fuels have no credit
+      under ``CA_carrier`` and the check does not apply.
 
     Parameters
     ----------
     networks
         Solved networks per horizon per scenario.
-    frame
-        Output of :func:`emissions`.
-    countries
-        Countries whose national totals are checked.
 
     Returns
     -------
     :
         One check per test.
     """
-    link_error, national, eu = {}, {}, {}
+    technology_error, carrier_error, eu = {}, {}, {}
     for scenario, horizons in networks.items():
         for horizon, n in horizons.items():
-            table = link_table(n)
-            ef = emission_factors(n)
             key = (scenario, horizon)
+            flows = port_flows(n)
+            table = link_table(n, flows)
+            ef = emission_factors(n)
             if _method(n.meta)[0] == "technology":
                 technology = technology_emissions(table, ef)
-                link_error[key] = (technology - table.native).abs().max()
-            else:
-                for ct in countries:
-                    lhs = national_co2_categories(n, ct).sum() / MT
-                    total = frame.loc[
-                        (scenario, horizon, CARRIER_OPTIMISED, ct)
-                    ].emissions.sum()
-                    national[(*key, ct)] = abs(lhs - total) / max(abs(lhs), 1.0)
-            unscaled = {}
-            for evaluator in EVALUATORS:
-                values = evaluate(n, evaluator, table, scaled=False)
-                if not values.isna().all():
-                    unscaled[evaluator] = values.sum()
-            spread = max(unscaled.values()) - min(unscaled.values())
-            eu[key] = spread / max(abs(unscaled[TECHNOLOGY]), 1.0)
+                technology_error[key] = (technology - table.native).abs().max()
+                continue
+            carrier = carrier_emissions(table, ef)
+            carrier_error[key] = (carrier - table.native).abs().max()
+            totals = [
+                evaluate(n, evaluator, flows, table, scaled=False).emissions.sum()
+                for evaluator in EVALUATORS
+            ]
+            eu[key] = (max(totals) - min(totals)) / max(abs(totals[0]), 1.0)
 
     def check(name: str, values: dict, tolerance: float, what: str) -> Check:
         if not values:
@@ -472,18 +449,23 @@ def checks(
 
     return [
         check(
-            "Technology evaluator = technology runs (t per link)",
-            link_error,
+            f"{TECHNOLOGY} = technology scenarios (t per link)",
+            technology_error,
             1e-3,
-            "technology runs",
+            "technology scenarios",
         ),
         check(
-            "Optimised carrier evaluator = national budget LHS",
-            national,
-            REL_TOL,
-            "carrier runs",
+            f"{CARRIER} = carrier scenarios (t per link)",
+            carrier_error,
+            1e-3,
+            "carrier scenarios",
         ),
-        check("Same EU total under every evaluator (P5)", eu, REL_TOL, "runs"),
+        check(
+            "Same EU total under both evaluators in carrier scenarios (P5)",
+            eu,
+            REL_TOL,
+            "carrier scenarios",
+        ),
     ]
 
 
@@ -518,25 +500,25 @@ def merge_checks(results: list[Check]) -> Check:
 
 def against_budget(totals: pd.DataFrame, budget: pd.Series) -> pd.DataFrame:
     """
-    Return the national totals minus the national budget of the horizon.
+    Return the national totals minus the national budget of the scenario and horizon.
 
     Parameters
     ----------
     totals
         Output of :func:`national_totals`.
     budget
-        Budget in Mt per horizon, a column of :func:`budgets`.
+        Budget in Mt per ``scenario`` and ``horizon``, a column of :func:`budgets`.
 
     Returns
     -------
     :
         Mt CO2 above (positive) or below (negative) the budget, like ``totals``.
     """
-    horizons = totals.index.get_level_values("horizon")
-    return totals.sub(budget.reindex(horizons).to_numpy(), axis=0)
+    keys = totals.index.droplevel("method")
+    return totals.sub(budget.reindex(keys).to_numpy(), axis=0)
 
 
-def sector_pathway(
+def category_pathway(
     frame: pd.DataFrame,
     country: str,
     scenario: str,
@@ -544,7 +526,7 @@ def sector_pathway(
     cutoff: float = 0.0,
 ) -> pd.DataFrame:
     """
-    Return the emissions of a country by sector over the horizons.
+    Return the emissions of a country by category over the horizons.
 
     Parameters
     ----------
@@ -553,19 +535,18 @@ def sector_pathway(
     country
         Country code.
     scenario
-        The run.
+        The scenario.
     evaluator
         One of :data:`EVALUATORS`.
     cutoff
-        Sectors whose absolute emissions are at most this in every horizon
+        Categories whose absolute emissions are at most this in every horizon
         are left out.
 
     Returns
     -------
     :
-        Mt CO2, indexed by ``horizon``, one column per sector in the order of
-        :data:`SECTORS`.
-        Empty if the evaluator does not apply to the run.
+        Mt CO2, indexed by ``horizon``, one column per category in the order
+        of :data:`evals.carbon_accounting.CATEGORIES`.
     """
     index = frame.index
     rows = frame[
@@ -573,14 +554,6 @@ def sector_pathway(
         & (index.get_level_values("evaluator") == evaluator)
         & (index.get_level_values("country") == country)
     ]
-    pathway = rows.emissions.groupby(["horizon", "sector"]).sum().unstack("sector")
-    order = [name for name, _ in SECTORS] + ["Other"]
-    pathway = pathway.reindex(columns=[s for s in order if s in pathway.columns])
+    pathway = rows.emissions.groupby(["horizon", "category"]).sum().unstack("category")
+    pathway = pathway.reindex(columns=[c for c in CATEGORIES if c in pathway.columns])
     return pathway.loc[:, pathway.abs().gt(cutoff).any()].fillna(0.0)
-
-
-def reference_run(totals: pd.DataFrame) -> str:
-    """Return the first run optimised with the method ``technology``, else the first run."""
-    methods = totals.index.droplevel("horizon").unique()
-    technology = [s for s, m in methods if m == "technology"]
-    return technology[0] if technology else methods[0][0]

@@ -8,6 +8,7 @@ import pandas as pd
 import pypsa
 import pytest
 
+from evals import carbon_accounting as ca
 from evals import carbon_accounting_pathways as cp
 from test.test_evals.test_carbon_accounting import ALPHA, add_budget, oil_toy, solve
 from test.test_mods.conftest import EF, build_oil_toy
@@ -38,7 +39,7 @@ def frame(networks) -> pd.DataFrame:
 
 def national(n: pypsa.Network, evaluator: str, country: str) -> float:
     values = cp.evaluate(n, evaluator)
-    return values[values.index.str.startswith(country)].sum()
+    return values[values.country == country].emissions.sum()
 
 
 def test_emission_factors(technology_run):
@@ -48,23 +49,6 @@ def test_emission_factors(technology_run):
 def test_emission_factors_need_imports():
     with pytest.raises(ValueError, match="emission factor"):
         cp.emission_factors(build_oil_toy())
-
-
-@pytest.mark.parametrize(
-    ("carrier", "expected"),
-    [
-        ("biogas to gas", "Fuel supply"),
-        ("Fischer-Tropsch", "Fuel supply"),
-        ("DAC", "DAC & vent"),
-        ("kerosene for aviation", "Transport"),
-        ("urban central gas CHP", "Heat"),
-        ("gas for industry CC", "Industry"),
-        ("CCGT", "Power"),
-        ("H2 Electrolysis", "Other"),
-    ],
-)
-def test_sector(carrier, expected):
-    assert cp.sector(carrier) == expected
 
 
 class TestTechnologyEvaluator:
@@ -81,41 +65,42 @@ class TestTechnologyEvaluator:
             )
 
     def test_values(self, technology_run):
-        # AT: biogas creation credit, DAC capture, shipping oil
+        # AT: biofuel credit, DAC capture, shipping oil
         at = national(technology_run, cp.TECHNOLOGY, "AT")
         assert at == pytest.approx(-20 * EF["gas"] - 20 * EF["oil"] + 20 * EF["oil"])
 
 
-class TestCarrierEvaluators:
-    def test_optimised_matches_booked_emissions(self, carrier_run):
+class TestCarrierEvaluator:
+    def test_reproduces_carrier_run(self, carrier_run):
+        table = cp.link_table(carrier_run)
+        values = cp.carrier_emissions(table, EF)
+        assert values.to_numpy() == pytest.approx(table.native.to_numpy())
+
+    def test_matches_booked_emissions(self, carrier_run):
         table = cp.link_table(carrier_run)
         for ct in COUNTRIES:
             booked = table.native[table.country == ct].sum()
-            assert national(carrier_run, cp.CARRIER_OPTIMISED, ct) == pytest.approx(
-                booked
-            )
+            assert national(carrier_run, cp.CARRIER, ct) == pytest.approx(booked)
 
-    def test_optimised_needs_claims(self, technology_run):
-        assert cp.evaluate(technology_run, cp.CARRIER_OPTIMISED).isna().all()
+    @pytest.mark.parametrize("country", COUNTRIES)
+    def test_technology_run_has_no_claims(self, technology_run, country):
+        balance = cp.evaluated_categories(technology_run, country, cp.CARRIER)
+        claims = list(ca.CLAIM_CATEGORIES.values())
+        assert balance[claims].abs().sum() == pytest.approx(0.0)
 
-    def test_average_on_technology_run(self, technology_run):
-        # 20 MWh green oil on 40 MWh consumed: each country is half green;
-        # all 20 MWh of gas are green and burned in DE
-        at = national(technology_run, cp.CARRIER_AVERAGE, "AT")
-        de = national(technology_run, cp.CARRIER_AVERAGE, "DE")
-        # AT: CCU charge + capture credit + shipping at half green
-        assert at == pytest.approx(10 * EF["oil"])
-        assert de == pytest.approx(10 * EF["oil"])
+    def test_technology_run_values(self, technology_run):
+        # AT: captured CO2 used + capture credit net to 0, shipping oil unclaimed
+        at = national(technology_run, cp.CARRIER, "AT")
+        assert at == pytest.approx(20 * EF["oil"])
 
-    def test_average_is_independent_of_the_claims(self, technology_run, carrier_run):
+    @pytest.mark.parametrize("run", ["technology_run", "carrier_run"])
+    def test_physical_categories_as_technology(self, request, run):
+        n = request.getfixturevalue(run)
+        physical = list(ca.PHYSICAL_CATEGORIES)
         for ct in COUNTRIES:
-            assert national(carrier_run, cp.CARRIER_AVERAGE, ct) == pytest.approx(
-                national(technology_run, cp.CARRIER_AVERAGE, ct)
-            )
-
-    def test_unknown_rule(self, carrier_run):
-        with pytest.raises(ValueError, match="allocation rule"):
-            cp.green_shares(cp.link_table(carrier_run), "nearest")
+            carrier = cp.evaluated_categories(n, ct, cp.CARRIER)[physical]
+            technology = cp.evaluated_categories(n, ct, cp.TECHNOLOGY)[physical]
+            assert carrier.to_numpy() == pytest.approx(technology.to_numpy())
 
     def test_unknown_evaluator(self, carrier_run):
         with pytest.raises(ValueError, match="evaluator"):
@@ -126,10 +111,37 @@ def test_aviation_scaled():
     n = oil_toy()
     n.links.loc["AT1 shipping oil", "carrier"] = "kerosene for aviation"
     n = solve(n, "technology")
-    values = cp.evaluate(n, cp.TECHNOLOGY)
-    unscaled = cp.evaluate(n, cp.TECHNOLOGY, scaled=False)
+    values = cp.evaluate(n, cp.TECHNOLOGY).set_index("link").emissions
+    unscaled = cp.evaluate(n, cp.TECHNOLOGY, scaled=False).set_index("link").emissions
     link = "AT1 shipping oil"
     assert values[link] == pytest.approx(ALPHA * unscaled[link])
+
+
+class TestCategories:
+    """The evaluators split emissions into the categories of the balance bridge."""
+
+    @pytest.mark.parametrize("country", COUNTRIES)
+    def test_technology_scenario_as_booked(self, technology_run, country):
+        booked = ca.national_co2_categories(technology_run, country)
+        evaluated = cp.evaluated_categories(technology_run, country, cp.TECHNOLOGY)
+        assert evaluated.to_numpy() == pytest.approx(booked.to_numpy())
+
+    @pytest.mark.parametrize("country", COUNTRIES)
+    def test_carrier_scenario_as_booked(self, carrier_run, country):
+        booked = ca.national_co2_categories(carrier_run, country)
+        evaluated = cp.evaluated_categories(carrier_run, country, cp.CARRIER)
+        assert evaluated.to_numpy() == pytest.approx(booked.to_numpy())
+
+    @pytest.mark.parametrize("evaluator", cp.EVALUATORS)
+    def test_categories_add_up(self, carrier_run, evaluator):
+        balance = cp.evaluated_categories(carrier_run, "AT", evaluator)
+        assert list(balance.index) == list(ca.CATEGORIES)
+        assert balance.sum() == pytest.approx(national(carrier_run, evaluator, "AT"))
+
+    def test_technology_has_no_claims(self, carrier_run):
+        balance = cp.evaluated_categories(carrier_run, "DE", cp.TECHNOLOGY)
+        claims = list(ca.CLAIM_CATEGORIES.values())
+        assert balance[claims].abs().sum() == pytest.approx(0.0)
 
 
 class TestFrames:
@@ -139,54 +151,66 @@ class TestFrames:
             "horizon",
             "evaluator",
             "country",
-            "sector",
+            "category",
         ]
         evaluators = frame.xs("base", level="scenario").index.unique("evaluator")
-        assert cp.CARRIER_OPTIMISED not in evaluators
+        assert list(evaluators) == list(cp.EVALUATORS)
 
     def test_national_totals(self, frame):
         totals = cp.national_totals(frame, "DE")
         assert list(totals.columns) == list(cp.EVALUATORS)
-        assert (
-            totals.loc[("base", "technology", "2050"), cp.CARRIER_OPTIMISED]
-            != (totals.loc[("base", "technology", "2050"), cp.CARRIER_OPTIMISED])
-        )  # NaN
+        assert totals.notna().all().all()
 
-    def test_own_method(self, frame):
+    def test_as_booked(self, frame):
         totals = cp.national_totals(frame, "DE")
-        own = cp.own_method(totals)
+        own = cp.as_booked(totals)
         assert (
             own[("base", "technology", "2050")]
             == totals.at[("base", "technology", "2050"), cp.TECHNOLOGY]
         )
         assert (
             own[("carrier", "carrier", "2050")]
-            == totals.at[("carrier", "carrier", "2050"), cp.CARRIER_OPTIMISED]
+            == totals.at[("carrier", "carrier", "2050"), cp.CARRIER]
         )
 
     def test_against_budget(self, frame):
         totals = cp.national_totals(frame, "DE")
-        gaps = cp.against_budget(totals, pd.Series({"2050": 1.0}))
+        budget = pd.Series(
+            1.0,
+            index=pd.MultiIndex.from_tuples(
+                [("base", "2050"), ("carrier", "2050")], names=["scenario", "horizon"]
+            ),
+        )
+        gaps = cp.against_budget(totals, budget)
         assert (gaps + 1.0).to_numpy() == pytest.approx(totals.to_numpy(), nan_ok=True)
 
     def test_budgets(self):
         n = solve(oil_toy(), "technology")
         add_budget(n, "AT", mu=0.0, constant=2e6)
         budgets = cp.budgets({"a": {"2050": n}}, ["AT"])
-        assert budgets.at["2050", "AT"] == pytest.approx(2.0)
+        assert budgets.at[("a", "2050"), "AT"] == pytest.approx(2.0)
 
-    def test_sector_pathway(self, frame):
-        pathway = cp.sector_pathway(frame, "AT", "base", cp.TECHNOLOGY)
+    def test_category_pathway(self, frame):
+        pathway = cp.category_pathway(frame, "AT", "base", cp.TECHNOLOGY)
         assert list(pathway.index) == ["2050"]
-        assert "Fuel supply" in pathway.columns
-        assert cp.sector_pathway(frame, "AT", "base", cp.CARRIER_OPTIMISED).empty
+        assert ca.BIOFUEL_CREDIT in pathway.columns
+        order = [c for c in ca.CATEGORIES if c in pathway.columns]
+        assert list(pathway.columns) == order
+        carrier = cp.category_pathway(frame, "AT", "base", cp.CARRIER)
+        assert ca.BIOFUEL_CREDIT not in carrier.columns
 
-    def test_reference_run(self, frame):
-        assert cp.reference_run(cp.national_totals(frame, "AT")) == "base"
+
+def test_evaluated_bridge(networks):
+    bridge = ca.balance_bridge(networks, "AT")
+    technology = cp.evaluated_bridge(networks, "AT", cp.TECHNOLOGY)
+    assert list(technology.columns) == list(bridge.columns)
+    assert technology.loc[("base", "2050")].to_numpy() == pytest.approx(
+        bridge.loc[("base", "2050")].to_numpy(), nan_ok=True
+    )
 
 
-def test_checks_pass(networks, frame):
-    checks = cp.checks(networks, frame, list(COUNTRIES))
+def test_checks_pass(networks):
+    checks = cp.checks(networks)
     assert [c.status for c in checks] == ["ok"] * 3
 
 

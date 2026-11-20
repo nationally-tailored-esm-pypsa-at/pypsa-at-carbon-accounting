@@ -12,6 +12,7 @@ import pytest
 import mods.constants
 import mods.network.carbon_accounting
 from evals import carbon_accounting as ca
+from evals import carbon_accounting_pathways as cp
 from mods.constraints.carbon_accounting import constraint_carbon_accounting
 from mods.network.carbon_accounting import apply_carbon_accounting
 from test.test_mods.conftest import (
@@ -155,6 +156,33 @@ class TestDiscovery:
         assert list(networks) == ["2030", "2050"]
 
 
+@pytest.mark.parametrize(
+    ("methods", "expected"),
+    [
+        (
+            [
+                ("base", "technology", False),
+                ("c", "carrier", False),
+                ("f", "carrier", True),
+            ],
+            ["base", "f"],
+        ),
+        ([("base", "technology", False), ("c", "carrier", False)], ["base", "c"]),
+    ],
+)
+def test_default_scenarios(methods, expected):
+    index = pd.MultiIndex.from_tuples(
+        [(s, h) for s, _, _ in methods for h in ("2030", "2050")],
+        names=["scenario", "horizon"],
+    )
+    info = pd.DataFrame(
+        [(m, f) for _, m, f in methods for _ in ("2030", "2050")],
+        index=index,
+        columns=["method", "fair_share"],
+    )
+    assert ca.default_scenarios(info) == expected
+
+
 class TestCheckSetup:
     @pytest.fixture
     def info(self):
@@ -296,7 +324,10 @@ class TestDecomposition:
             "base": {"2050": solve(oil_toy(), "technology")},
             "carrier": {"2050": solve(oil_toy(), "carrier", budgets=("AT",))},
         }
-        return ca.balance_bridge(networks, "AT"), ca.technology_bridge(networks, "AT")
+        return (
+            ca.balance_bridge(networks, "AT"),
+            cp.evaluated_bridge(networks, "AT", cp.TECHNOLOGY),
+        )
 
     def test_technology_run_unchanged(self, frames):
         bridge, technology = frames

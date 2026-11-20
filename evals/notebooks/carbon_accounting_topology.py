@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.25.0"
-app = marimo.App()
+app = marimo.App(width="full")
 
 
 @app.cell
@@ -222,15 +222,7 @@ def _(layer_buses, mo):
 
 
 @app.cell
-def _(
-    atmosphere,
-    co2_import,
-    kind_colors,
-    layer_buses,
-    mo,
-    pd,
-    show_labels,
-):
+def _(atmosphere, co2_import, kind_colors, layer_buses, mo, pd, show_labels):
     import html
     import re
     import shutil

@@ -3,10 +3,12 @@
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
 """
-Emissions of carbon accounting runs under every accounting method (marimo).
+Emissions of carbon accounting scenarios under every accounting method (marimo).
 
-Evaluates every run of the carbon accounting configuration for all planning
-horizons with the technology method and the carrier method, and answers:
+Evaluates every scenario of the carbon accounting configuration for all
+planning horizons under the evaluators ``CA_technology`` and ``CA_carrier``,
+split into the categories of the national balance bridge
+of ``evals/notebooks/carbon_accounting.py``, and answers:
 
 1. Are different evaluation methods needed for the two accounting methods?
 2. How do they differ, and what happens if they are applied vice versa?
@@ -44,7 +46,7 @@ def _():
 
 
 @app.cell
-def _(cp, mo):
+def _(ca, cp, mo):
     # categorical slots in fixed order (validated palette); grey for "Other"
     PALETTE = [
         "#2a78d6",
@@ -57,8 +59,14 @@ def _(cp, mo):
         "#e34948",
     ]
     EVALUATOR_COLOURS = dict(zip(cp.EVALUATORS, PALETTE))
-    SECTOR_COLOURS = {name: PALETTE[i] for i, (name, _) in enumerate(cp.SECTORS)}
-    SECTOR_COLOURS["Other"] = "#8a8984"
+    # one colour per category of the bridge; the claims share one colour and
+    # differ by pattern
+    _claims = list(ca.CLAIM_CATEGORIES.values())
+    _others = [c for c in ca.CATEGORIES if c not in _claims]
+    CATEGORY_STYLE = {c: (PALETTE[i], "") for i, c in enumerate(_others)}
+    CATEGORY_STYLE.update(
+        {c: (PALETTE[len(_others)], p) for c, p in zip(_claims, ["", "/", "x", "."])}
+    )
     ICONS = {"ok": "✓", "warn": "⚠", "fail": "✗"}
     KINDS = {"ok": "success", "warn": "warn", "fail": "danger"}
 
@@ -81,7 +89,7 @@ def _(cp, mo):
         fig.update_xaxes(type="category")
         return fig
 
-    return EVALUATOR_COLOURS, PALETTE, SECTOR_COLOURS, badge, layout
+    return CATEGORY_STYLE, EVALUATOR_COLOURS, PALETTE, badge, layout
 
 
 @app.cell
@@ -89,18 +97,22 @@ def _(mo):
     mo.md(r"""
     # Carbon accounting: emissions under every method
 
-    A run is **optimised** under one accounting method (its *run method*), but its
-    physical flows can be **evaluated** under any method (the *evaluator*):
+    A scenario is **optimised** under one accounting method (its *method*), but its
+    flows can be **evaluated** under either method (the *evaluator*). Both evaluators
+    read the **same network elements** of a run and differ only in which of them count
+    towards the national total. An element a run does not have counts as 0:
 
-    | Evaluator | Rule | Needs | Applies to |
+    | Category | Network element | `CA_technology` | `CA_carrier` |
     |---|---|---|---|
-    | `technology` | the technology that releases CO2 books it; green producers book −EF at creation, green imports draw from the atmosphere | physical flows only | every run |
-    | `carrier (optimised)` | green fuel books zero, fossil fuel +EF at the consumer, synthetic fuels are charged the CO2 they use; credits as **claimed by the optimiser** | the claims of the run | carrier runs |
-    | `carrier (EU average)` | the same carrier rules; every consumer gets the **EU-wide green share** of its fuel | physical flows + an allocation rule | every run |
+    | Fuel use, process & waste, capture credit | consumer, process and capture links | ✓ | ✓ |
+    | Biofuel credit | bio producers: −EF × fuel output | ✓ | – |
+    | Green import credit | green import links: −p0 | ✓ | – |
+    | Captured CO2 used in synthetic fuels | synthetic producers: CO2 input | – | ✓ |
+    | Claims gas, oil, kerosene, methanol | claim links: −EF × claim | – | ✓ (0 in technology runs) |
 
-    National totals follow the national CO2 budget: links by name prefix, kerosene and
-    kerosene claims scaled by the domestic aviation share. Claims are spread over the
-    consuming links of the claiming country, so emissions can be shown by sector.
+    Emissions are split into the categories of the national balance bridge (notebook
+    `carbon_accounting.py`, section 2). National totals follow the national CO2 budget:
+    links by name prefix, kerosene and kerosene claims scaled by the domestic aviation share.
     """)
     return
 
@@ -128,7 +140,7 @@ def _(PALETTE, ca, mo, root_input):
     info = ca.run_info(files)
     colours = {s: PALETTE[i % len(PALETTE)] for i, s in enumerate(files)}
     scenario_select = mo.ui.multiselect(
-        options=list(files), value=list(files), label="Scenarios"
+        options=list(files), value=ca.default_scenarios(info), label="Scenarios"
     )
     budget_countries = sorted({c for b in info.budgets for c in b.split(", ") if c})
     country_select = mo.ui.dropdown(
@@ -162,7 +174,8 @@ def _(ca, country_select, info, mo, scenario_select):
     mo.stop(setup.failed)
     selected = list(scenario_select.value)
     country = country_select.value
-    return country, selected
+    reference = ca.default_reference(info.loc[selected])
+    return country, reference, selected
 
 
 @app.cell
@@ -178,9 +191,9 @@ def _(ca, cp, mo):
         return cp.emissions({scenario: load(path)})
 
     @mo.cache
-    def scenario_checks(path: str, scenario: str, countries: tuple) -> list:
-        networks = {scenario: load(path)}
-        return cp.checks(networks, cp.emissions(networks), list(countries))
+    def scenario_checks(path: str, scenario: str) -> list:
+        """Check the evaluators on one scenario, once."""
+        return cp.checks({scenario: load(path)})
 
     return load, scenario_checks, scenario_emissions
 
@@ -191,7 +204,6 @@ def _(
     country,
     cp,
     files,
-    info,
     load,
     mo,
     pd,
@@ -200,17 +212,17 @@ def _(
     selected,
 ):
     _paths = {s: str(files[s][next(iter(files[s]))].parents[1]) for s in selected}
-    _countries = tuple(sorted({c for b in info.budgets for c in b.split(", ") if c}))
     _frames, _checks = [], {}
     for _scenario in mo.status.progress_bar(
         selected, title="Loading and evaluating scenarios", remove_on_exit=True
     ):
         _frames.append(scenario_emissions(_paths[_scenario], _scenario))
-        for _check in scenario_checks(_paths[_scenario], _scenario, _countries):
+        for _check in scenario_checks(_paths[_scenario], _scenario):
             _checks.setdefault(_check.name, []).append((_scenario, _check))
     frame = pd.concat(_frames)
     totals = cp.national_totals(frame, country)
-    budget = cp.budgets({selected[0]: load(_paths[selected[0]])}, [country])[country]
+    _networks = {s: load(_paths[s]) for s in selected}
+    budget = cp.budgets(_networks, [country])[country]
 
     # one badge per check, merged over the scenarios
     _summary = [cp.merge_checks([c for _, c in _items]) for _items in _checks.values()]
@@ -229,14 +241,9 @@ def _(
 
 @app.cell
 def _(budget, country, cp, mo, totals):
-    _horizons = list(budget.index)
-    _carrier = totals[cp.CARRIER_OPTIMISED].dropna()
-    _gap = (_carrier - totals[cp.CARRIER_AVERAGE].reindex(_carrier.index)).abs()
-    _gap_max = _gap.max() if len(_gap) else float("nan")
-    _where = _gap.idxmax() if len(_gap) else ("–", "–", "–")
     _table = totals.copy()
     _table.insert(
-        0, "budget", budget.reindex(totals.index.get_level_values("horizon")).to_numpy()
+        0, "budget", budget.reindex(totals.index.droplevel("method")).to_numpy()
     )
     mo.vstack(
         [
@@ -244,22 +251,18 @@ def _(budget, country, cp, mo, totals):
                 f"""
     ## 1 Are different evaluation methods needed?
 
-    **Yes, for the national split, not for the EU total.** All three evaluators give the
-    same EU total for every run (check P5 above): both methods move CO2 between countries
-    and between the moment a fuel is made and the moment it is burned, but they create or
-    destroy no CO2.
+    **Yes, for the national split, not for the EU total of a carrier scenario.** Both
+    evaluators give the same EU total for every carrier scenario (check P5 above): the
+    carrier method moves CO2 between countries and between the moment a fuel is made and
+    the moment it is burned, but it creates or destroys no CO2.
 
-    - **`technology`** needs nothing but the physical flows. It can be computed for every run,
-      also ex post for carrier runs, by undoing the transformation of the green producers.
-    - **`carrier`** needs, on top of the physical flows, an **allocation of the green
-      attributes** to consuming countries. In a carrier run, this allocation is a decision
-      variable (the claims). For a technology run it does not exist and must be set by a
-      rule, here the EU-average green share.
-    - The allocation is not a detail: for {country}, the optimised claims and the EU-average
-      rule differ by up to **{_gap_max:.1f} Mt CO2** ({_where[0]}, {_where[2]}). Under the
-      carrier method, the claims, not the physical system, decide most of the national total.
+    - **`{cp.TECHNOLOGY}`** reads the producers and green imports. It needs nothing but
+      the physical flows, so it reads every scenario.
+    - **`{cp.CARRIER}`** reads the claim links instead. A technology scenario has none, so
+      its green fuels count as fossil at the consumer and nobody gets their credit: its EU
+      total is higher than under `{cp.TECHNOLOGY}` by the green fuel burned.
 
-    National totals of {country} under every evaluator, with the national budget (Mt CO2):
+    National totals of {country} under both evaluators, with the national budget (Mt CO2):
     """
             ),
             mo.ui.table(_table.round(2).reset_index(), selection=None),
@@ -268,27 +271,25 @@ def _(budget, country, cp, mo, totals):
     return
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(EVALUATOR_COLOURS, budget, country, cp, go, layout, mo, totals):
     _gaps = cp.against_budget(totals, budget)
 
-    def _run_figure(scenario: str):
+    def _scenario_figure(scenario: str):
         rows = totals.xs(scenario, level="scenario")
-        method = rows.index.get_level_values("run method")[0]
+        method = rows.index.get_level_values("method")[0]
         horizons = rows.index.get_level_values("horizon")
         fig = go.Figure()
         for evaluator, colour in EVALUATOR_COLOURS.items():
-            if rows[evaluator].isna().all():
-                continue
             own = (evaluator, method) in [
                 (cp.TECHNOLOGY, "technology"),
-                (cp.CARRIER_OPTIMISED, "carrier"),
+                (cp.CARRIER, "carrier"),
             ]
             fig.add_trace(
                 go.Bar(
                     x=horizons,
                     y=rows[evaluator],
-                    name=evaluator + (" (own method)" if own else ""),
+                    name=evaluator + (" (as booked)" if own else ""),
                     marker=dict(color=colour, line=dict(width=0)),
                     hovertemplate="%{y:.2f} Mt",
                 )
@@ -296,7 +297,7 @@ def _(EVALUATOR_COLOURS, budget, country, cp, go, layout, mo, totals):
         fig.add_trace(
             go.Scatter(
                 x=horizons,
-                y=budget.reindex(horizons),
+                y=budget.xs(scenario, level="scenario").reindex(horizons),
                 name="budget",
                 mode="lines+markers",
                 line=dict(color="#0b0b0b", dash="dash", width=2),
@@ -315,33 +316,46 @@ def _(EVALUATOR_COLOURS, budget, country, cp, go, layout, mo, totals):
                 f"""
     ## 2 How do they differ, and what if they are applied vice versa?
 
-    Each run under every evaluator, against the national budget of {country}. The bar of the
-    run's own method meets the budget by construction (where the budget binds). The other
-    bars show how the same physical system reads under the other method:
+    Each scenario under every evaluator, against the national budget of {country}. The bar
+    of the scenario's own method (*as booked*) meets the budget by construction (where the
+    budget binds). The other bars show how the same physical system reads under the other
+    method:
 
-    - **A technology run read with carrier rules** loses the creation credits of the green
-      fuels it produces (they go to whoever consumes them) and gains credits for the green
-      fuels it consumes. A country that exports green fuels or CCU feedstock misses its
-      budget under carrier accounting.
-    - **A carrier run read with technology rules** loses all claims and gets the creation
-      credits of its own producers back. A country that met its budget by claiming credits
-      shows its physical emissions, typically far above the budget.
+    - **A technology scenario evaluated as `CA_carrier`** loses the biofuel and green
+      import credits of the green fuels it produces or imports and books the captured CO2
+      used in synthetic fuels. It has no claim links, so it gets no credit for the green
+      fuels it consumes: it misses its budget by the green fuel credits it relied on.
+    - **A carrier scenario evaluated as `CA_technology`** loses all claims and gets the
+      biofuel and green import credits of its own producers and importers back. A country
+      that met its budget by claims shows its physical emissions, typically far above the
+      budget.
 
     Distance to the budget (Mt CO2, positive = above budget):
     """
             ),
             mo.ui.table(_gaps.round(2).reset_index(), selection=None),
-            *[_run_figure(s) for s in _scenarios],
+            *[_scenario_figure(s) for s in _scenarios],
         ]
     )
     return
 
 
 @app.cell
-def _(country, cp, go, mo, totals):
-    _year = "2040"
+def _(mo, totals):
+    _horizons = sorted(totals.index.unique("horizon"))
+    heatmap_horizon = mo.ui.dropdown(
+        options=_horizons,
+        value="2040" if "2040" in _horizons else _horizons[-1],
+        label="Horizon",
+    )
+    return (heatmap_horizon,)
+
+
+@app.cell
+def _(country, cp, go, heatmap_horizon, mo, totals):
+    _year = heatmap_horizon.value
     _horizon = totals.index.get_level_values("horizon").astype(str)
-    _rows = totals[_horizon == _year].droplevel(["run method", "horizon"])
+    _rows = totals[_horizon == _year].droplevel(["method", "horizon"])
     _z = _rows.T.reindex(list(cp.EVALUATORS))
     _heat = go.Figure(
         go.Heatmap(
@@ -357,19 +371,17 @@ def _(country, cp, go, mo, totals):
         )
     )
     _heat.update_layout(
-        title=f"{country} {_year}: emissions per run and evaluator (Mt CO2)",
+        title=f"{country} {_year}: emissions per scenario and evaluator (Mt CO2)",
         template="plotly_white",
         height=360,
         margin=dict(t=60, b=40),
     )
-    _heat.update_xaxes(title_text="Run", type="category")
+    _heat.update_xaxes(title_text="Scenario", type="category")
     _heat.update_yaxes(title_text="Evaluator", autorange="reversed")
     mo.vstack(
         [
-            mo.md(
-                f"### {country} in {_year}: every run under every evaluator\n\n"
-                "Blank cells: the evaluator does not apply (no claims in a technology run)."
-            ),
+            mo.md(f"### {country} in {_year}: every scenario under every evaluator"),
+            heatmap_horizon,
             mo.ui.plotly(_heat),
         ]
     )
@@ -378,23 +390,25 @@ def _(country, cp, go, mo, totals):
 
 @app.cell
 def _(cp, mo, selected):
-    pathway_run = mo.ui.dropdown(options=selected, value=selected[0], label="Run")
+    pathway_scenario = mo.ui.dropdown(
+        options=selected, value=selected[-1], label="Scenario"
+    )
     pathway_evaluator = mo.ui.dropdown(
         options=list(cp.EVALUATORS), value=cp.TECHNOLOGY, label="Evaluator"
     )
-    return pathway_evaluator, pathway_run
+    return pathway_evaluator, pathway_scenario
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(budget, colours, country, cp, go, layout, mo, totals):
-    _own = cp.own_method(totals)
+    _booked = cp.as_booked(totals)
     _lines = go.Figure()
     for _scenario in totals.index.unique("scenario"):
         _rows = totals.xs(_scenario, level="scenario")
         _x = _rows.index.get_level_values("horizon")
         for _series, _dash, _label in [
-            (_own.xs(_scenario, level="scenario"), "solid", "own method"),
-            (_rows[cp.TECHNOLOGY], "dot", "technology"),
+            (_booked.xs(_scenario, level="scenario"), "solid", "as booked"),
+            (_rows[cp.TECHNOLOGY], "dot", cp.TECHNOLOGY),
         ]:
             _lines.add_trace(
                 go.Scatter(
@@ -407,37 +421,43 @@ def _(budget, colours, country, cp, go, layout, mo, totals):
                     hovertemplate="%{y:.2f} Mt",
                 )
             )
-    _lines.add_trace(
-        go.Scatter(
-            x=list(budget.index),
-            y=budget,
-            name="budget",
-            mode="lines",
-            line=dict(color="#0b0b0b", dash="dash", width=1),
+    # one budget line, or one per scenario if the budgets differ
+    _budgets = budget.unstack("scenario")
+    _same = _budgets.nunique(axis=1, dropna=False).le(1).all()
+    for _scenario in [_budgets.columns[0]] if _same else _budgets.columns:
+        _lines.add_trace(
+            go.Scatter(
+                x=list(_budgets.index),
+                y=_budgets[_scenario],
+                name="budget" if _same else f"{_scenario}: budget",
+                mode="lines",
+                line=dict(
+                    color="#0b0b0b" if _same else colours[_scenario],
+                    dash="dash",
+                    width=1,
+                ),
+            )
         )
-    )
-    layout(
-        _lines, f"{country}: reported (own method) vs physical yardstick (technology)"
-    )
+    layout(_lines, f"{country}: as booked vs physical ({cp.TECHNOLOGY})")
 
-    _yardstick = totals[cp.TECHNOLOGY].unstack("horizon").droplevel("run method")
+    _physical = totals[cp.TECHNOLOGY].unstack("horizon").droplevel("method")
     mo.vstack(
         [
             mo.md(
                 f"""
     ## 3 Decarbonisation pathways
 
-    The **reported** pathway (solid, each run under its own method) follows the budget in
-    every run, so it cannot tell the approaches apart. The **physical** pathway needs one
-    yardstick for all runs; the technology evaluator is the natural one, because it depends on
-    the physical flows only (dotted). The gap between solid and dotted lines of a carrier run
-    is what {country} meets by claims instead of domestic abatement and domestic green fuel
-    production.
+    The pathway **as booked** (solid, each scenario under its own method) follows the
+    budget in every scenario, so it cannot tell the approaches apart. The **physical**
+    pathway needs one evaluator for all scenarios; `{cp.TECHNOLOGY}` is the natural one,
+    because it depends on the physical flows only (dotted). The gap between solid and
+    dotted lines of a carrier scenario is what {country} meets by claims instead of
+    domestic abatement and domestic green fuel production.
 
-    {country} under the technology yardstick (Mt CO2):
+    {country} evaluated as `{cp.TECHNOLOGY}` (Mt CO2):
     """
             ),
-            mo.ui.table(_yardstick.round(2).reset_index(), selection=None),
+            mo.ui.table(_physical.round(2).reset_index(), selection=None),
             mo.ui.plotly(_lines),
         ]
     )
@@ -446,7 +466,7 @@ def _(budget, colours, country, cp, go, layout, mo, totals):
 
 @app.cell
 def _(
-    SECTOR_COLOURS,
+    CATEGORY_STYLE,
     country,
     cp,
     frame,
@@ -454,59 +474,58 @@ def _(
     layout,
     mo,
     pathway_evaluator,
-    pathway_run,
+    pathway_scenario,
 ):
-    _pathway = cp.sector_pathway(
-        frame, country, pathway_run.value, pathway_evaluator.value, cutoff=1e-3
+    _pathway = cp.category_pathway(
+        frame, country, pathway_scenario.value, pathway_evaluator.value, cutoff=1e-3
     )
-    if _pathway.empty:
-        _chart = mo.callout(
-            mo.md(
-                f"`{pathway_evaluator.value}` does not apply to {pathway_run.value}: "
-                "it has no claims."
-            ),
-            kind="warn",
-        )
-    else:
-        _fig = go.Figure()
-        for _sector in _pathway.columns:
-            _fig.add_trace(
-                go.Bar(
-                    x=_pathway.index,
-                    y=_pathway[_sector],
-                    name=_sector,
-                    marker=dict(color=SECTOR_COLOURS[_sector], line=dict(width=0)),
-                    hovertemplate="%{y:.2f} Mt",
-                )
-            )
+    _fig = go.Figure()
+    for _category in _pathway.columns:
+        _colour, _pattern = CATEGORY_STYLE[_category]
         _fig.add_trace(
-            go.Scatter(
+            go.Bar(
                 x=_pathway.index,
-                y=_pathway.sum(axis=1),
-                name="total",
-                mode="lines+markers",
-                line=dict(color="#0b0b0b", width=2),
-                marker=dict(size=8),
+                y=_pathway[_category],
+                name=_category,
+                marker=dict(
+                    color=_colour,
+                    line=dict(width=0),
+                    pattern=dict(shape=_pattern, fgcolor="#ffffff"),
+                ),
                 hovertemplate="%{y:.2f} Mt",
             )
         )
-        _fig.update_layout(barmode="relative")
-        _chart = mo.ui.plotly(
-            layout(
-                _fig,
-                f"{country}: {pathway_run.value} evaluated with {pathway_evaluator.value}",
-                height=480,
-            )
+    _fig.add_trace(
+        go.Scatter(
+            x=_pathway.index,
+            y=_pathway.sum(axis=1),
+            name="total",
+            mode="lines+markers",
+            line=dict(color="#0b0b0b", width=2),
+            marker=dict(size=8),
+            hovertemplate="%{y:.2f} Mt",
         )
+    )
+    _fig.update_layout(barmode="relative")
+    _chart = mo.ui.plotly(
+        layout(
+            _fig,
+            f"{country}: {pathway_scenario.value} evaluated as "
+            f"{pathway_evaluator.value}",
+            height=480,
+        )
+    )
     mo.vstack(
         [
             mo.md(
-                "### Pathway by sector\n\n"
-                "Claims are spread over the consuming sectors. *Fuel supply* holds green "
-                "fuel producers (creation credits under `technology`, CCU charges and the "
-                "stored CO2 of bio-CC plants under `carrier`) and oil refining."
+                "### Pathway by category\n\n"
+                "The categories of the national balance bridge. Fuel use, process & "
+                "waste and capture credit are physical; biofuel credit and green import "
+                "credit exist only in `CA_technology`; captured CO2 used in synthetic "
+                "fuels and the claims only in `CA_carrier` (no claims in a technology "
+                "scenario)."
             ),
-            mo.hstack([pathway_run, pathway_evaluator], justify="start", gap=2),
+            mo.hstack([pathway_scenario, pathway_evaluator], justify="start", gap=2),
             _chart,
         ]
     )
@@ -514,29 +533,23 @@ def _(
 
 
 @app.cell
-def _(ca, country, cp, frame, mo, totals):
-    _reference = cp.reference_run(totals)
-    _sectors = (
-        frame.xs((country, "technology"), level=["country", "evaluator"])
-        .emissions.groupby(["scenario", "horizon", "sector"])
+def _(ca, country, cp, frame, mo, reference):
+    _categories = (
+        frame.xs((country, cp.TECHNOLOGY), level=["country", "evaluator"])
+        .emissions.groupby(["scenario", "horizon", "category"])
         .sum()
     )
-    _table = ca.difference_table(_sectors, _reference, cutoff=1e-3)
+    _table = ca.difference_table(_categories, reference, cutoff=1e-3)
     mo.vstack(
         [
             mo.md(
-                f"### Physical pathway by sector against {_reference}\n\n"
-                f"{country} under the technology yardstick, Δ against the technology run "
-                "(Mt CO2). Positive Δ: the run emits more in that sector."
+                f"### Physical pathway by category against {reference}\n\n"
+                f"{country} evaluated as `{cp.TECHNOLOGY}`, Δ against {reference} "
+                "(Mt CO2). Positive Δ: the scenario emits more in that category."
             ),
             mo.ui.table(_table.round(2).reset_index(), selection=None),
         ]
     )
-    return
-
-
-@app.cell
-def _():
     return
 
 
