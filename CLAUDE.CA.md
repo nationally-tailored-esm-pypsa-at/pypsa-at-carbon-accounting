@@ -19,6 +19,7 @@ Every path is either **CA-owned** (edit freely; PyPSA-AT never touches it) or **
 | `config/config.carbon-accounting.yaml`, `config/scenarios.carbon-accounting.yaml` | reduced comparison runs (`--configfile` overlay) |
 | `docs-ca/` | specs, explanations, how-to guides; plain Markdown, not rendered |
 | `CHANGELOG.CA.md`, `CLAUDE.CA.md` | changelog and rules of this fork |
+| `.github/workflows/ca-fork-guard.yaml` | CI: fork guard and weekly merge check against PyPSA-AT |
 
 Everything else is AT-owned. Do not edit AT logic in place. When CA needs to change
 AT behaviour, add CA code in a CA-owned path and call it from a hook. Example: the CA
@@ -53,7 +54,19 @@ leaves them in place. The current hooks:
 | `CLAUDE.md` | imports this file |
 | `.github/pull_request_template.md` | changelog and docs item for CA changes |
 
-A new hook needs a reason why no CA-owned path can do the job. Add it to this table.
+A new hook needs a reason why no CA-owned path can do the job. Add it to this table and
+to `HOOKED` in `test/test_carbon_accounting/test_fork_guard.py`; a new CA-owned path goes
+to `CA_OWNED` there.
+
+## Guards
+
+- `test/test_carbon_accounting/test_fork_guard.py` fails when a file outside the CA-owned
+  paths differs from PyPSA-AT (merge base with `upstream/main`) without being listed as
+  hooked, or when a hooked file changes outside a fenced block. It skips without the
+  `upstream/main` ref; run it locally after `git fetch upstream`.
+- `.github/workflows/ca-fork-guard.yaml` runs the guard on every PR and push to `main`,
+  and every Monday checks with `git merge-tree` that `main` still merges `upstream/main`
+  without conflicts. A failing merge check means: open a sync PR now.
 
 ## Rules that differ from CLAUDE.md
 
@@ -81,7 +94,7 @@ through a sync PR:
 git fetch upstream
 git switch -c chore/sync-upstream-$(date +%F) origin/main
 git merge upstream/main          # conflicts only inside fenced hooks, if any
-pixi run pytest test/test_carbon_accounting   # includes the drift test
+pixi run pytest test/test_carbon_accounting   # drift test and fork guard
 ```
 
 Then add an entry to `CHANGELOG.CA.md` naming the synced upstream commit, and open the PR.
