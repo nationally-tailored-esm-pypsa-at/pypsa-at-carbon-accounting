@@ -21,7 +21,7 @@ import pandas as pd
 import pypsa
 from snakemake.script import Snakemake
 
-from mods.constants import (
+from mods.carbon_accounting.constants import (
     ACCOUNTING_FUELS,
     ATTRIBUTE_CARRIERS,
     CAPTURE,
@@ -576,7 +576,7 @@ def fair_share_keys(n: pypsa.Network) -> pd.Series:
     Return each country's share of the EU fixed demand per pooled claim (D18).
 
     The fixed demand of a claim is the load on the buses listed in
-    :data:`mods.constants.FAIR_SHARE_DEMAND`. The keys are normalised per
+    :data:`mods.carbon_accounting.constants.FAIR_SHARE_DEMAND`. The keys are normalised per
     fuel, over both oil claims together, so the keys of a fuel sum to 1.
 
     Parameters
@@ -690,7 +690,7 @@ def apply_carbon_accounting(
     if unclassified:
         raise ValueError(
             f"Link carriers at CO2 or fuel buses without a carbon accounting "
-            f"class: {unclassified}. Add them to mods/constants.py."
+            f"class: {unclassified}. Add them to mods/carbon_accounting/constants.py."
         )
     logger.info("Applying the carrier-based carbon accounting method.")
 

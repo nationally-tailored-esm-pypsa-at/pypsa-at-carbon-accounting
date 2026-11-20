@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
-"""Tests for mods/network/carbon_accounting.py (spec section 6, U1-U6, U12, U14)."""
+"""Tests for mods/carbon_accounting/network.py (spec section 6, U1-U6, U12, U14)."""
 
 from itertools import combinations
 
@@ -12,14 +12,14 @@ import pytest
 from add_brownfield import add_brownfield
 
 from evals.utils import get_location
-from mods.constants import (
+from mods.carbon_accounting.constants import (
     CARBON_ACCOUNTING_MARKER,
     FAIR_SHARE_KEY,
     GREEN_BIO_PRODUCERS,
     GREEN_IMPORTS,
     GREEN_SYNTHETIC_PRODUCERS,
 )
-from mods.network.carbon_accounting import (
+from mods.carbon_accounting.network import (
     TRANSFORMATION_CLASSES,
     apply_carbon_accounting,
     carbon_accounting_method,
@@ -29,7 +29,7 @@ from mods.network.carbon_accounting import (
     port_efficiency,
     unclassified_carriers,
 )
-from test.test_mods.conftest import (
+from test.test_carbon_accounting.conftest import (
     EF,
     build_carbon_network,
     build_oil_toy,

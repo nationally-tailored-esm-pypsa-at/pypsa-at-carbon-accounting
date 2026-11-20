@@ -1,1 +1,1 @@
-::: mods.constraints.carbon_accounting
+::: mods.carbon_accounting.constraints

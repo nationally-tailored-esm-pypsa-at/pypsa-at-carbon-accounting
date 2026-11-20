@@ -1,1 +1,1 @@
-::: mods.network.carbon_accounting
+::: mods.carbon_accounting.network
