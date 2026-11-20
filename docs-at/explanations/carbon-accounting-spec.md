@@ -104,17 +104,41 @@ exports, but not for the CO2 it uses itself. CO2 that is exported and used abroa
 to the importing country. This needs no constraint and no tracing of CO2 through the
 CO2 network; exact tracing isn't linear, because CO2 pipelines are bidirectional.
 
-Check of P5 per chain (carbon units):
+**Check of P5 per chain.** A chain follows one unit of carbon from where it enters the
+system to where it ends up. Along the way it is booked at `co2 atmosphere` at up to four
+stages:
 
-| Chain | `technology` | `carrier` |
-|---|---|---|
-| Fossil + CCS (capture rate c) | 1−c | 1−c |
-| Fossil + CCU → FT → burned | (1−c) + c = 1 | (1−c) + c (FT) + 1 (use) − 1 (claim) = 1 |
-| DAC → FT → burned | −1 + 1 = 0 | −1 + 1 (FT) + 1 − 1 = 0 |
-| DAC → storage | −1 | −1 |
-| Biogas upgrading → burned | −1 + 1 = 0 | 0 + 1 − 1 = 0 |
-| Biogas CC (stored share s) | −1 − s + 1 = −s | −s + 1 − 1 = −s |
-| DAC → FT → naphtha → plastics (share p re-emitted) | −1 + p | −1 + 1 (FT) + p − 1 (claim) = p − 1 |
+| Stage | Component | `technology` | `carrier` |
+|---|---|---|---|
+| **Source** | where the carbon enters the chain: fossil emitter with capture (C1), DAC (C1), bio-fuel producer (G1) | residual emission (1−c), DAC −1, bio-fuel −1 (creation credit) | same, but bio-fuel 0 (P2); only the captured share keeps its credit |
+| **Conversion** | synthetic fuel producer (G2) | 0 | +CO2 used (P4, D17) |
+| **Use** | fuel consumer (U), e.g. a boiler or `kerosene for aviation` | +EF·fuel | +EF·fuel (unchanged) |
+| **Claim** | claim link that retires the attribute (3.3) | — | −EF·fuel (P1) |
+
+Values are in carbon units: 1 = the carbon content of the fuel, i.e. EF × energy. `c` is the
+capture rate, `s` the share of biogenic carbon that is captured and stored, `p` the share
+that is re-emitted at end of life. A dash means the stage doesn't occur in the chain.
+
+| Chain | Method | Source | Conversion | Use | Claim | Net |
+|---|---|---|---|---|---|---|
+| Fossil + CCS | `technology` | 1−c | — | — | — | 1−c |
+| | `carrier` | 1−c | — | — | — | 1−c |
+| Fossil + CCU → FT → burned | `technology` | 1−c | 0 | +c | — | 1 |
+| | `carrier` | 1−c | +c | +c | −c | 1 |
+| DAC → FT → burned | `technology` | −1 | 0 | +1 | — | 0 |
+| | `carrier` | −1 | +1 | +1 | −1 | 0 |
+| DAC → storage | `technology` | −1 | — | — | — | −1 |
+| | `carrier` | −1 | — | — | — | −1 |
+| Biogas upgrading → burned | `technology` | −1 | — | +1 | — | 0 |
+| | `carrier` | 0 | — | +1 | −1 | 0 |
+| Biogas CC → burned | `technology` | −1−s | — | +1 | — | −s |
+| | `carrier` | −s | — | +1 | −1 | −s |
+| DAC → FT → naphtha → plastics | `technology` | −1 | 0 | +p | — | p−1 |
+| | `carrier` | −1 | +1 | +p | −1 | p−1 |
+
+The net value per chain is the same under both methods (P5). What differs is the stage, and
+so the country, where it is booked. Under `technology` the credit sits at the source; under
+`carrier` it moves to the claim, i.e. to the country that consumes the green fuel.
 
 ### 3.3 Accounting layer
 
@@ -130,7 +154,7 @@ from ordinary PyPSA components, so `n.statistics` and the evals see it without s
 | Bus (pool) | `EU renewable oil attribute`, `EU renewable methanol attribute` | — | carriers `renewable oil attribute`, `renewable methanol attribute`, `location=EU` |
 | Bus (country) | `{CT} renewable oil attribute`, `{CT} renewable methanol attribute` | — | same carriers, `location=CT` |
 | Link (distribution) | `EU renewable oil attribute -> {CT}`, and the same for methanol | pool → country bus | `efficiency = 1`, `p_nom = 1e9`, no bound (D3) |
-| Store | one per pool bus and per `{CT} renewable gas attribute`, same name | attribute bus | `e_nom_extendable=True`, `capital_cost=0`, `e_cyclic=True` |
+| Store | one per pool bus and per `{CT} renewable gas attribute`, same name | attribute bus | `e_nom_extendable=True`, `capital_cost=1e-6`, `e_cyclic=True` (the tiny cost keeps `e_nom` at the swing within the year; with zero cost the solver parks the stores at arbitrary, huge levels) |
 | Attribute port (G1–G3) | extra port `bus{k}` on the producer link | attribute bus of the producer's country (gas) or EU pool | `efficiency{k} = out` (MWh attribute per MWh fuel) |
 | CCU port (G2) | extra port `bus{k}` on the synthetic fuel producer | `co2 atmosphere` | `efficiency{k} = −stored` (t CO2 used per unit of `p0`, 3.2) |
 | Link (claim) | `{CT} renewable gas claim`, `{CT} renewable oil claim`, `{CT} renewable oil claim aviation`, `{CT} renewable methanol claim` | bus0 `{CT} … attribute` (country bus), bus1 `co2 atmosphere` | `efficiency = −EF`, `p_nom = 1e9` |
@@ -182,6 +206,18 @@ Only AT and DE have national budgets; the other countries' claims only matter fo
     share). Therefore the claims of countries with a national budget carry a small cost
     (`claim_cost`, D16): they claim only what their budget needs.
 
+    The claim cost is not a real cost and is irrelevant for a country's system costs. At
+    0.01 EUR/t, Austria's 17.5 Mt of claims in CA_carrier 2025 cost 0.18 MEUR, which is
+    negligible against the system costs and too small to change investment or dispatch:
+    claims only move credits between countries, while the physical flows stay the same.
+    It is needed for reasonable
+    solver outputs: without it, the split of the credits is degenerate, and the solver
+    returns an arbitrary, non-reproducible allocation.
+
+    As a consequence, in years when the national budget doesn't bind, countries with a
+    budget report their **maximum** emissions, not a neutral allocation: they leave all
+    credits they don't need to the other countries.
+
 ### 3.4 Imports (D10)
 
 Import links keep `p0` in t CO2 (their costs are defined per t). Only bus0 is re-pointed:
@@ -211,8 +247,9 @@ Import links keep `p0` in t CO2 (their costs are defined per t). Only bus0 is re
 
 By default, countries with a national budget claim pooled credits up to their own consumption
 (D14). In CA_carrier 2025, Austria claims 68 TWh of green oil, against 3.1 TWh at the fair
-share defined below. The option `fair_share` caps these claims at the country's share of the
-EU pool.
+share defined below. The option `fair_share` caps the credits a country **takes from** the EU
+pool at its share of the EU pool. This share follows the country's fixed fuel demand, not the
+green fuel it adds to the pool (that would be the contribution cap, 3.7).
 
 **Natural definition and why it isn't used.** The fair claim is
 `consumption(CT, f) × green production(EU, f) / consumption(EU, f)`. Consumption and green
@@ -267,6 +304,33 @@ all countries together equal G_f.
   a key, add `carbon_accounting-fair-share-{CT}-{kind}`. Guard: `fair_share.enable`.
 - Evals: `view_balance_carbon_claims` additionally shows the cap (`tolerance · w · G_f`) as a third
   group next to the claimed and EU-average credits.
+
+### 3.7 Contribution cap (TODO, D19)
+
+!!! warning "Open"
+    Not specified or implemented yet.
+
+**Problem.** Neither the consumption bound (3.3, item 1) nor the fair share (3.6) depends on the
+country's own production. A country can claim more pooled credits than it adds to the pool, up to
+its consumption or its fair share. For example, Austria can claim green oil credits without
+producing any green oil.
+
+**Goal.** Each country claims at most x times what it contributes to the pool of the fuel:
+
+`P({CT} renewable k claim) ≤ x · C(CT, f)`
+
+- `C(CT, f) = Σ_l Σ_t w_t · efficiency_attr(l) · p0(l, t)` over the attribute ports into
+  `EU renewable f attribute` of the producers located in CT. This is the same sum as `G_f`
+  (3.6), restricted to one country. `x` is a config parameter, so the constraint stays linear.
+
+**Open questions.**
+
+- Who contributes green imports (D10): the importing country, or nobody?
+- Oil and kerosene share one pool: should the cap apply to both claim kinds together?
+- Scope: only budget countries (like 3.6), or all countries? Capping all countries can make
+  full retirement (D5) infeasible.
+- Should it combine with the fair share cap, or replace it?
+- Config key (e.g. `contribution_cap: {enable, factor}`), tests, and an evals view.
 
 ## 4. Configuration
 
@@ -472,3 +536,4 @@ Each package is one PR with tests and passes `ruff`, the unit tests and a dry ru
 | D16 | Tie-break: claims of countries with a national budget cost `claim_cost` = 0.01 EUR/t, so they claim pooled credits only when their budget needs them. Without it, the split is arbitrary while no budget binds | decided |
 | D17 | Captured CO2 counts as negative emissions in the capturing country unless it is used for a synthetic fuel. Capture keeps its `technology` coefficients; G2 producers book the CO2 they use at `co2 atmosphere` in their own country. No removal pool, claim or bound. CO2 that is exported and used abroad is charged to the importing country | decided |
 | D18 | Optional fair share (`fair_share.enable`, default off): pooled oil, kerosene and methanol claims of budget countries ≤ tolerance × key × EU green production. The key is the country's share of the EU's fixed demand in the current horizon (3.6). Countries without a budget are not capped | decided |
+| D19 | Contribution cap: pooled claims of a country ≤ x × its own contribution to the pool (3.7) | open |

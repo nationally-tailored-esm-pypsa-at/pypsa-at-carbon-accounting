@@ -215,6 +215,7 @@ CAPTURE: tuple[str, ...] = (
     "urban central gas CHP CC",
     "CCGT methanol CC",
     "Methanol steam reforming CC",
+    "allam gas",
     "allam methanol",
     "waste CHP CC",
     "process emissions CC",

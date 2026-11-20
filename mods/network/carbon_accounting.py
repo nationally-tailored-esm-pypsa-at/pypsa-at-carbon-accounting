@@ -37,6 +37,7 @@ from mods.constants import (
     GREEN_BIO_PRODUCERS,
     GREEN_IMPORTS,
     GREEN_SYNTHETIC_PRODUCERS,
+    POOLED_ATTRIBUTES,
     SEQUESTRATION,
     TRANSFER_CARRIER,
     UNCHANGED,
@@ -90,6 +91,8 @@ TRANSFORMED_CLASSES: tuple[str, ...] = ("G1", "G2", "G3")
 ATMOSPHERE = "co2 atmosphere"
 # capacity of the accounting links, large enough to never bind
 UNBOUNDED = 1e9
+# EUR/MWh on the attribute stores, small enough to not change the costs
+STORE_CAPITAL_COST = 1e-6
 ACCOUNTING_LINK_CARRIERS: tuple[str, ...] = (
     *CLAIM_CARRIERS.values(),
     TRANSFER_CARRIER,
@@ -310,7 +313,9 @@ def _add_attribute_stores(n: pypsa.Network, buses: list[str], kind: str) -> None
         carrier=ATTRIBUTE_CARRIERS[kind],
         e_nom_extendable=True,
         e_cyclic=True,
-        capital_cost=0.0,
+        # with zero cost any constant level is optimal and the solver picks
+        # huge values; a tiny cost shrinks e_nom to the swing within the year
+        capital_cost=STORE_CAPITAL_COST,
     )
 
 
@@ -391,9 +396,7 @@ def drop_accounting_layer(n: pypsa.Network) -> None:
     :
         Modifies the network in place.
     """
-    carriers = (
-        set(ATTRIBUTE_CARRIERS.values()) | set(ACCOUNTING_LINK_CARRIERS) | {CO2_IMPORT}
-    )
+    carriers = {*ATTRIBUTE_CARRIERS.values(), *ACCOUNTING_LINK_CARRIERS, CO2_IMPORT}
     for c in ("Link", "Store", "Generator", "Bus"):
         static = n.components[c].static
         n.remove(c, static.index[static.carrier.isin(carriers)])
@@ -443,32 +446,37 @@ def add_accounting_layer(n: pypsa.Network, ef: dict[str, float]) -> None:
         Modifies the network in place.
     """
     _add_gas_layer(n, ef)
-    for fuel in ("oil", "methanol"):
-        _add_pooled_layer(n, fuel, ef[fuel])
+    for fuel in POOLED_ATTRIBUTES:
+        # no layer for a fuel without buses, e.g. a network without methanol
+        if n.buses.carrier.eq(fuel).any():
+            _add_pooled_layer(n, fuel, ef[fuel])
 
     # green imports draw their carbon from a virtual source instead of the
     # atmosphere (section 3.4)
     n.add("Bus", CO2_IMPORT, carrier=CO2_IMPORT, unit="t_co2", location="EU")
     n.add("Generator", CO2_IMPORT, bus=CO2_IMPORT, carrier=CO2_IMPORT, p_nom=UNBOUNDED)
 
-    carriers = (
-        set(ATTRIBUTE_CARRIERS.values()) | set(ACCOUNTING_LINK_CARRIERS) | {CO2_IMPORT}
-    )
+    carriers = {*ATTRIBUTE_CARRIERS.values(), *ACCOUNTING_LINK_CARRIERS, CO2_IMPORT}
     n.add("Carrier", sorted(carriers - set(n.carriers.index)))
 
 
 def _fuel_output(n: pypsa.Network, idx: pd.Index) -> pd.DataFrame:
-    """Return bus, fuel and efficiency of the first fuel output port of links."""
+    """Return bus, fuel and efficiency of the fuel output port of links."""
     out = pd.DataFrame({"bus": "", "fuel": "", "efficiency": 0.0}, index=idx)
+    n_outputs = pd.Series(0, index=idx)
     for port in reversed(link_ports(n)[1:]):
         fuel = port_bus_carrier(n, port).loc[idx]
         efficiency = port_efficiency(n, port).loc[idx]
         is_output = fuel.isin(ACCOUNTING_FUELS) & (efficiency > 0)
+        n_outputs += is_output
         out.loc[is_output, "bus"] = n.links.loc[idx, f"bus{port}"][is_output]
         out.loc[is_output, "fuel"] = fuel[is_output]
         out.loc[is_output, "efficiency"] = efficiency[is_output]
     if (out.fuel == "").any():
         raise ValueError(f"Links without fuel output: {list(idx[out.fuel == ''])}")
+    # attributes go to one port only, so a second fuel output would lose them
+    if (n_outputs > 1).any():
+        raise ValueError(f"Links with several fuel outputs: {list(idx[n_outputs > 1])}")
     return out
 
 
@@ -507,11 +515,16 @@ def add_attribute_ports(n: pypsa.Network) -> None:
 
 def price_claims(n: pypsa.Network, cts: list[str], claim_cost: float) -> None:
     """
-    Put a small cost on the claims of countries with a national CO2 budget.
+    Put a small cost on all claims of countries with a national CO2 budget.
 
-    Without it, the optimiser is indifferent to which country claims pooled
-    credits while no national budget binds. With it, these countries only
+    This covers every claim kind: pooled oil and methanol credits as well as
+    gas credits. Without it, the optimiser is indifferent to which country
+    claims while no national budget binds. With it, these countries only
     claim what their budget needs, and the rest goes to the other countries.
+
+    Only budget countries pay: all attributes must be claimed within the
+    year, so the same cost on every claim adds a cost to green production
+    but leaves the split between countries arbitrary.
 
     Parameters
     ----------
