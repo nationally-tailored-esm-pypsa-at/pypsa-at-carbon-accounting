@@ -63,15 +63,20 @@ kerosene claims are scaled by α, as in the national constraint.
 | Fuel use | +EF at all fuel users (fossil and green molecules) | ✓ | ✓ |
 | Process & waste | `process emissions`, `HVC to air`, waste CHP, `municipal solid waste` | ✓ | ✓ |
 | Capture credit | CO2 captured into `co2 stored` by capture links (C1) and bio-CC links; vent | ✓ | ✓ |
-| Creation credit | −EF·out of G1 bio-fuel producers | ✓ | 0 |
-| CCU charge | +CO2 used by G2 (FT, Sabatier, methanolisation) | 0 | ✓ |
+| Biofuel credit | −EF·out of G1 bio-fuel producers (biogas, BioSNG, bio-liquids, bio-methanol) | ✓ | 0 |
+| Green import credit | −CO2 of G3 green imports (`import gas`), booked at the entry country | ✓ | 0 |
+| Captured CO2 used in synthetic fuels | +CO2 used by G2 (FT, Sabatier, methanolisation); cancels the capture credit of that CO2 (D17) | 0 | ✓ |
 | Claims (gas, oil, kerosene, methanol) | claim links, one category per fuel | 0 | ✓ |
 
 *Implementation note:* a capture link books only the CO2 it captures as capture credit. The
 rest of its emission goes to the category of the link: residual emissions of `SMR CC` or
 `allam methanol` to fuel use, `process emissions CC` and `waste CHP CC` to process & waste, the
-rest of bio-CC links to the creation credit (≈ 0 under `carrier`). Green imports (G3) count as
-creation credit. Links are selected by name prefix, as in the national budget.
+rest of bio-CC links to the biofuel credit (≈ 0 under `carrier`). Links are selected by name
+prefix, as in the national budget, so `EU oil import` and `EU methanol import` belong to no country.
+
+*Implementation note:* biofuel credit, green import credit and captured CO2 used in synthetic
+fuels are three categories, not one creation credit, so domestic production, border crossings
+and the reversal of capture credits stay apart.
 
 The categories add up exactly to the country's reported total, so a waterfall between two scenarios
 closes exactly. The category definitions are expected to need several interactive rounds once
@@ -84,8 +89,8 @@ B = the first other scenario), so any pair can be compared, e.g. `CA_base` → `
 `CA_carrier` → `CA_carrier_fair` or `CA_base` → `CA_carrier_fair`. Next to it, a small-multiples
 row shows every scenario against the reference for the same horizon.
 
-Step order: total A → Δ fuel use → Δ process & waste → Δ capture credit → Δ creation credit →
-Δ CCU charge → Δ claims per fuel → total B.
+Step order: total A → Δ fuel use → Δ process & waste → Δ capture credit → Δ biofuel credit →
+Δ green import credit → Δ captured CO2 used in synthetic fuels → Δ claims per fuel → total B.
 
 - The first three steps are **physical** (the system changed); the rest are **accounting**
   (the method changed). The chart marks the two groups visually.

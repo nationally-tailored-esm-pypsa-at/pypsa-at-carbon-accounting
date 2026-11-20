@@ -196,18 +196,40 @@ class TestNationalCategories:
 
     def test_technology(self, oil_technology):
         balance = ca.national_co2_categories(oil_technology, "AT")
-        assert balance[ca.CREATION_CREDIT] == pytest.approx(-20 * EF["gas"])
+        assert balance[ca.BIOFUEL_CREDIT] == pytest.approx(-20 * EF["gas"])
         assert balance[ca.CAPTURE_CREDIT] == pytest.approx(-20 * EF["oil"])
         assert balance[ca.FUEL_USE] == pytest.approx(20 * EF["oil"])
-        assert balance[ca.CCU_CHARGE] == pytest.approx(0.0)
+        assert balance[ca.CAPTURED_CO2_USED] == pytest.approx(0.0)
         assert balance.sum() == pytest.approx(-20 * EF["gas"])
 
     def test_carrier(self, oil_carrier):
         balance = ca.national_co2_categories(oil_carrier, "AT")
-        assert balance[ca.CREATION_CREDIT] == pytest.approx(0.0, abs=1e-9)
-        assert balance[ca.CCU_CHARGE] == pytest.approx(20 * EF["oil"])
+        assert balance[ca.BIOFUEL_CREDIT] == pytest.approx(0.0, abs=1e-9)
+        assert balance[ca.CAPTURED_CO2_USED] == pytest.approx(20 * EF["oil"])
         assert balance[ca.CAPTURE_CREDIT] == pytest.approx(-20 * EF["oil"])
         assert balance[ca.FUEL_USE] == pytest.approx(20 * EF["oil"])
+
+    @pytest.mark.parametrize(
+        ("method", "expected"), [("technology", -2.0), ("carrier", 0.0)]
+    )
+    def test_green_import_credit(self, method, expected):
+        n = build_gas_toy(consumer_in_origin=True)
+        # 1 t CO2 per snapshot, two snapshots: technology credits AT with 2 t
+        n.add(
+            "Link",
+            "AT1 gas import",
+            carrier="import gas",
+            bus0="co2 atmosphere",
+            bus1="AT1 gas",
+            efficiency=1 / EF["gas"],
+            p_nom=1.0,
+            p_min_pu=1.0,
+        )
+        balance = ca.national_co2_categories(solve(n, method), "AT")
+        assert balance[ca.GREEN_IMPORT_CREDIT] == pytest.approx(expected, abs=1e-9)
+        assert balance[ca.BIOFUEL_CREDIT] == pytest.approx(
+            -20 * EF["gas"] if method == "technology" else 0.0, abs=1e-9
+        )
 
     def test_claims_retire_all_attributes(self, oil_carrier):
         claims = list(ca.CLAIM_CATEGORIES.values())
@@ -536,11 +558,11 @@ def test_national_rent():
         [("base", "2050"), ("c", "2050")], names=["scenario", "horizon"]
     )
     bridge = pd.DataFrame(0.0, index=index, columns=list(ca.ACCOUNTING_CATEGORIES))
-    bridge.loc[("base", "2050"), ca.CREATION_CREDIT] = -2.0
+    bridge.loc[("base", "2050"), ca.BIOFUEL_CREDIT] = -2.0
     bridge.loc[("c", "2050"), "Claims oil"] = -3.0
     cost = pd.DataFrame({"national CO2 price": [100.0, np.nan]}, index=index)
     rent = ca.national_rent(bridge, cost)
-    assert rent.at[("base", "2050"), ca.CREATION_CREDIT] == pytest.approx(0.2)
+    assert rent.at[("base", "2050"), ca.BIOFUEL_CREDIT] == pytest.approx(0.2)
     assert rent.loc[("c", "2050")].abs().sum() == 0.0
 
 

@@ -46,12 +46,21 @@ STEPS: dict[str, tuple[str, str]] = {
         "Carbon Capture",
         "weniger Carbon Capture in AT → mehr Emissionen",
     ),
-    ca.CREATION_CREDIT: (
-        "Gutschrift<br>Herstellung",
-        "Synthetische Fuels/Gase haben keine negativen Emissionen in der "
+    ca.BIOFUEL_CREDIT: (
+        "Gutschrift biogene<br>Energieträger",
+        "Biogene Energieträger haben keine negativen Emissionen in der "
         "Herstellung → mehr Emissionen",
     ),
-    ca.CCU_CHARGE: ("CCU", "Unterschied in CCU"),
+    ca.GREEN_IMPORT_CREDIT: (
+        "Gutschrift<br>grüne Importe",
+        "Grüne Importe haben keine negativen Emissionen an der Grenze "
+        "→ mehr Emissionen",
+    ),
+    ca.CAPTURED_CO2_USED: (
+        "Abscheidung genutzt<br>für synth. Fuels",
+        "Abgeschiedenes CO₂, das in synthetische Fuels geht, verliert seine "
+        "Gutschrift → mehr Emissionen",
+    ),
     "Claims gas": (
         "Claims Gas",
         "Synthetisches Gas wird inkl. der negativen Emissionen importiert und "

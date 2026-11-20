@@ -105,8 +105,10 @@ ACCOUNTING_LINK_CARRIERS: tuple[str, ...] = (
 FUEL_USE = "Fuel use"
 PROCESS_AND_WASTE = "Process & waste"
 CAPTURE_CREDIT = "Capture credit"
-CREATION_CREDIT = "Creation credit"
-CCU_CHARGE = "CCU charge"
+BIOFUEL_CREDIT = "Biofuel credit"
+GREEN_IMPORT_CREDIT = "Green import credit"
+# cancels the capture credit of CO2 that goes into a synthetic fuel (D17)
+CAPTURED_CO2_USED = "Captured CO2 used in synthetic fuels"
 CLAIM_CATEGORIES: dict[str, str] = {
     "renewable gas claim": "Claims gas",
     "renewable oil claim": "Claims oil",
@@ -115,8 +117,9 @@ CLAIM_CATEGORIES: dict[str, str] = {
 }
 PHYSICAL_CATEGORIES: tuple[str, ...] = (FUEL_USE, PROCESS_AND_WASTE, CAPTURE_CREDIT)
 ACCOUNTING_CATEGORIES: tuple[str, ...] = (
-    CREATION_CREDIT,
-    CCU_CHARGE,
+    BIOFUEL_CREDIT,
+    GREEN_IMPORT_CREDIT,
+    CAPTURED_CO2_USED,
     *CLAIM_CATEGORIES.values(),
 )
 CATEGORIES: tuple[str, ...] = (*PHYSICAL_CATEGORIES, *ACCOUNTING_CATEGORIES)
@@ -440,8 +443,9 @@ def national_co2_categories(
 
     category = pd.Series(FUEL_USE, index=links.index)
     category[carrier.isin(PROCESS_AND_WASTE_CARRIERS)] = PROCESS_AND_WASTE
-    category[carrier.isin(GREEN_BIO_PRODUCERS + GREEN_IMPORTS)] = CREATION_CREDIT
-    category[carrier.isin(GREEN_SYNTHETIC_PRODUCERS)] = CCU_CHARGE
+    category[carrier.isin(GREEN_BIO_PRODUCERS)] = BIOFUEL_CREDIT
+    category[carrier.isin(GREEN_IMPORTS)] = GREEN_IMPORT_CREDIT
+    category[carrier.isin(GREEN_SYNTHETIC_PRODUCERS)] = CAPTURED_CO2_USED
     # venting releases captured CO2 again, so it nets against the capture
     # credit; only built with sector.co2_vent (off in the AT configs)
     category[carrier.isin(VENT)] = CAPTURE_CREDIT

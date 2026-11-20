@@ -338,14 +338,15 @@ def _(
         [
             mo.md(
                 "## 2 National balance bridge\n\n"
-                "Physical steps (blue) change because the system changed; accounting "
-                "steps (orange) change because the method changed. Kerosene and kerosene "
-                "claims are scaled by the domestic aviation share, as in the national budget.\n"
-                "### Elements\n"
+                "- Blue: Physical steps change because the system changed\n"
+                "- Orange: Accounting elements are elements directly changed by the change in accounting method in the network topology\n\n"
+                "Kerosene and kerosene claims are scaled by the domestic aviation share, as in the national budget.\n\n"
+                "### Elements\n\n"
                 "- Fuel use (physical): Default emissions from fuels\n"
                 "- Capture credit (physical): negative emissions from capture\n"
-                "- Creation credit: negative Emissions for biofuel production (negative in technology-driven accounting)\n"
-                "- CCU charge: emissions when creating a fuel from stored co2 (positive in carrier-driven accounting)\n"
+                "- Biofuel credit: negative emissions at biogenic fuel production (biogas, BioSNG, bio-liquids, bio-methanol; technology only)\n"
+                "- Green import credit: negative emissions of green fuel imports at the entry country (technology only)\n"
+                "- Captured CO2 used in synthetic fuels: cancels the capture credit of CO2 that Fischer-Tropsch, Sabatier or methanolisation take from `co2 stored`, booked at the plant, possibly for CO2 captured abroad (carrier only)\n"
                 "- Claims gas/oil etc.: negative emission claims to balance renewable fuels emissions to zero (only in carrier-driven accounting)\n"
             ),
             mo.hstack([horizon_select, a_select, b_select], justify="start", gap=2),
@@ -489,6 +490,7 @@ def _(
     values,
 ):
     _PRODUCER, _CLAIMANT, _CCU = "#2a78d6", "#eb6834", "#6250d6"
+    _IMPORTER = "#1baf7a"
     _technology = [
         s for s in selected if values.xs(s, level="scenario").price.isna().all()
     ]
@@ -566,12 +568,21 @@ def _(
     _rents = go.Figure()
     for _y, _name, _colour in [
         (
-            _rent[ca.CREATION_CREDIT],
-            "green producers in the country (creation credit)",
+            _rent[ca.BIOFUEL_CREDIT],
+            "biofuel producers in the country (biofuel credit)",
             _PRODUCER,
         ),
+        (
+            _rent[ca.GREEN_IMPORT_CREDIT],
+            "green importers in the country (green import credit)",
+            _IMPORTER,
+        ),
         (_claims, "claimants in the country (claims)", _CLAIMANT),
-        (_rent[ca.CCU_CHARGE], "synthetic producers pay (CCU charge)", _CCU),
+        (
+            _rent[ca.CAPTURED_CO2_USED],
+            "synthetic producers pay (captured CO2 used)",
+            _CCU,
+        ),
     ]:
         _rents.add_trace(
             go.Bar(
