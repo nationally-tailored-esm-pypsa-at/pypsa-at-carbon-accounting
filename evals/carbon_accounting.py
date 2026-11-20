@@ -402,6 +402,58 @@ def domestic_aviation_share(n: pypsa.Network, country: str) -> float:
     return float(share.get(country, 0.0))
 
 
+def _categorise(
+    n: pypsa.Network, country: str, emitted: pd.Series, flows: pd.DataFrame
+) -> pd.Series:
+    """
+    Split the emissions of the links of a country into the bridge categories.
+
+    Parameters
+    ----------
+    n
+        A solved network.
+    country
+        Country code; links are selected by name prefix.
+    emitted
+        Annual t CO2 per link into ``co2 atmosphere``, before the aviation
+        scaling.
+    flows
+        Port flows of ``n``, see :func:`port_flows`.
+
+    Returns
+    -------
+    :
+        Emissions in t CO2 per category of :data:`CATEGORIES`.
+    """
+    links = n.links[n.links.index.str.startswith(country)]
+    emitted = emitted.reindex(links.index, fill_value=0.0)
+    captured = _link_flows(flows, "co2 stored").reindex(links.index, fill_value=0.0)
+    carrier = links.carrier
+
+    # credit + rest = emitted per link: the split moves CO2 between
+    # categories, it never adds any (check I5 compares the sum with the LHS)
+    is_capture = carrier.isin(CAPTURE + GREEN_BIO_PRODUCERS)
+    credit = -captured.where(is_capture, 0.0)
+    rest = emitted - credit
+
+    category = pd.Series(FUEL_USE, index=links.index)
+    category[carrier.isin(PROCESS_AND_WASTE_CARRIERS)] = PROCESS_AND_WASTE
+    category[carrier.isin(GREEN_BIO_PRODUCERS)] = BIOFUEL_CREDIT
+    category[carrier.isin(GREEN_IMPORTS)] = GREEN_IMPORT_CREDIT
+    category[carrier.isin(GREEN_SYNTHETIC_PRODUCERS)] = CAPTURED_CO2_USED
+    # venting releases captured CO2 again, so it nets against the capture
+    # credit; only built with sector.co2_vent (off in the AT configs)
+    category[carrier.isin(VENT)] = CAPTURE_CREDIT
+    for claim, name in CLAIM_CATEGORIES.items():
+        category[carrier == claim] = name
+
+    alpha = domestic_aviation_share(n, country)
+    rest = rest.where(~carrier.isin(AVIATION_CARRIERS), rest * alpha)
+    balance = rest.groupby(category).sum()
+    balance[CAPTURE_CREDIT] = balance.get(CAPTURE_CREDIT, 0.0) + credit.sum()
+    return balance.reindex(list(CATEGORIES), fill_value=0.0)
+
+
 def national_co2_categories(
     n: pypsa.Network, country: str, flows: pd.DataFrame | None = None
 ) -> pd.Series:
@@ -430,33 +482,42 @@ def national_co2_categories(
         Emissions in t CO2 per category of :data:`CATEGORIES`.
     """
     flows = port_flows(n) if flows is None else flows
-    links = n.links[n.links.index.str.startswith(country)]
-    emitted = _link_flows(flows, "co2").reindex(links.index, fill_value=0.0)
-    captured = _link_flows(flows, "co2 stored").reindex(links.index, fill_value=0.0)
-    carrier = links.carrier
+    return _categorise(n, country, _link_flows(flows, "co2"), flows)
 
-    # credit + rest = emitted per link: the split moves CO2 between
-    # categories, it never adds any (check I5 compares the sum with the LHS)
-    is_capture = carrier.isin(CAPTURE + GREEN_BIO_PRODUCERS)
-    credit = -captured.where(is_capture, 0.0)
-    rest = emitted - credit
 
-    category = pd.Series(FUEL_USE, index=links.index)
-    category[carrier.isin(PROCESS_AND_WASTE_CARRIERS)] = PROCESS_AND_WASTE
-    category[carrier.isin(GREEN_BIO_PRODUCERS)] = BIOFUEL_CREDIT
-    category[carrier.isin(GREEN_IMPORTS)] = GREEN_IMPORT_CREDIT
-    category[carrier.isin(GREEN_SYNTHETIC_PRODUCERS)] = CAPTURED_CO2_USED
-    # venting releases captured CO2 again, so it nets against the capture
-    # credit; only built with sector.co2_vent (off in the AT configs)
-    category[carrier.isin(VENT)] = CAPTURE_CREDIT
-    for claim, name in CLAIM_CATEGORIES.items():
-        category[carrier == claim] = name
+def technology_co2_categories(
+    n: pypsa.Network, country: str, flows: pd.DataFrame | None = None
+) -> pd.Series:
+    """
+    Split the national CO2 balance of a run into the bridge categories, under technology rules.
 
-    alpha = domestic_aviation_share(n, country)
-    rest = rest.where(~carrier.isin(AVIATION_CARRIERS), rest * alpha)
-    balance = rest.groupby(category).sum()
-    balance[CAPTURE_CREDIT] = balance.get(CAPTURE_CREDIT, 0.0) + credit.sum()
-    return balance.reindex(list(CATEGORIES), fill_value=0.0)
+    The flows of the run stay, the coefficients are those of the method
+    ``technology``: the carrier transformation is inverted
+    (:func:`evals.carbon_accounting_pathways.technology_emissions`), so bio-fuel
+    producers get their credit back, synthetic fuel producers book nothing,
+    green imports draw from the atmosphere and claims vanish. A technology run
+    comes out as :func:`national_co2_categories`.
+
+    Parameters
+    ----------
+    n
+        A solved network.
+    country
+        Country code.
+    flows
+        Port flows of ``n``, see :func:`port_flows`; computed if missing.
+
+    Returns
+    -------
+    :
+        Emissions in t CO2 per category of :data:`CATEGORIES`.
+    """
+    # the pathways module builds on this one, so it is imported here
+    from evals.carbon_accounting_pathways import link_table, technology_emissions
+
+    flows = port_flows(n) if flows is None else flows
+    emitted = technology_emissions(link_table(n, flows), emission_factors(n))
+    return _categorise(n, country, emitted, flows)
 
 
 def _country_frame(networks: Networks, func, **kwargs) -> pd.DataFrame:
@@ -496,13 +557,44 @@ def balance_bridge(networks: Networks, country: str) -> pd.DataFrame:
         ``Total`` and ``Budget``, indexed by ``scenario`` and ``horizon``.
     """
 
-    def bridge(n: pypsa.Network) -> pd.Series:
-        balance = national_co2_categories(n, country)
-        balance["Total"] = balance.sum()
-        balance["Budget"] = national_budget(n, country)
-        return balance / MT
+    return _country_frame(
+        networks, _bridge_row, country=country, technology_rules=False
+    )
 
-    return _country_frame(networks, bridge)
+
+def _bridge_row(n: pypsa.Network, country: str, technology_rules: bool) -> pd.Series:
+    """Return one row of a bridge: categories, total and budget in Mt CO2."""
+    categorise = (
+        technology_co2_categories if technology_rules else national_co2_categories
+    )
+    balance = categorise(n, country)
+    balance["Total"] = balance.sum()
+    balance["Budget"] = national_budget(n, country)
+    return balance / MT
+
+
+def technology_bridge(networks: Networks, country: str) -> pd.DataFrame:
+    """
+    Return the national CO2 balance per category of every run, under technology rules.
+
+    Same layout as :func:`balance_bridge`. Technology runs give the same rows;
+    carrier runs show their flows booked with the coefficients of the method
+    ``technology``, see :func:`technology_co2_categories`.
+
+    Parameters
+    ----------
+    networks
+        Solved networks per horizon per scenario.
+    country
+        Country code.
+
+    Returns
+    -------
+    :
+        Mt CO2 with one column per category of :data:`CATEGORIES`, plus
+        ``Total`` and ``Budget``, indexed by ``scenario`` and ``horizon``.
+    """
+    return _country_frame(networks, _bridge_row, country=country, technology_rules=True)
 
 
 def waterfall(
@@ -538,13 +630,122 @@ def waterfall(
             group = "physical" if category in PHYSICAL_CATEGORIES else "accounting"
             rows.append({"step": f"Δ {category}", "group": group, "value": delta})
     rows.append({"step": f"{b}", "group": "total", "value": end["Total"]})
+    return _steps(rows, end["Budget"])
+
+
+def _steps(rows: list[dict], budget: float) -> pd.DataFrame:
+    """Place the bars of a waterfall; ``total`` rows stand on zero."""
     steps = pd.DataFrame(rows)
     is_total = steps.group == "total"
-    level = steps.value.where(~is_total, 0.0).cumsum() + start["Total"]
+    level = steps.value.where(~is_total, 0.0).cumsum() + steps.value.iloc[0]
     steps["end"] = level.where(~is_total, steps.value)
     steps["base"] = (steps.end - steps.value).where(~is_total, 0.0)
-    steps.attrs["budget"] = end["Budget"]
+    steps.attrs["budget"] = budget
     return steps
+
+
+def bridge_decomposition(
+    bridge: pd.DataFrame, technology: pd.DataFrame, horizon: str, a: str, b: str
+) -> pd.DataFrame:
+    """
+    Split the change of every category from ``a`` to ``b`` into flows and method.
+
+    With ``E_m(f)`` the categories of flows ``f`` booked under method ``m``:
+
+    - ``flows``: ``E_tech(f_b) - E_tech(f_a)``, the change of the flows,
+      valued with the coefficients of the method ``technology``
+    - ``method``: ``[E(f_b) - E_tech(f_b)] - [E(f_a) - E_tech(f_a)]``, the
+      change of the coefficients at fixed flows (``E`` as booked in the run)
+
+    The two parts add up to the change in :func:`balance_bridge`. Categories
+    that do not exist under technology rules (captured CO2 used in synthetic
+    fuels, claims) have no flow part in this order; their flow changes show
+    in the physical categories. Fuel use, process & waste and capture credit
+    have no method part.
+
+    Parameters
+    ----------
+    bridge
+        Output of :func:`balance_bridge`.
+    technology
+        Output of :func:`technology_bridge` for the same runs.
+    horizon
+        Planning horizon.
+    a, b
+        Scenarios at the start and the end.
+
+    Returns
+    -------
+    :
+        Mt CO2 with the columns ``flows``, ``method`` and ``total`` (the change
+        in the bridge), one row per category of :data:`CATEGORIES`.
+    """
+    booked = bridge[list(CATEGORIES)]
+    tech = technology[list(CATEGORIES)]
+    method = booked - tech
+    flows = tech.loc[(b, horizon)] - tech.loc[(a, horizon)]
+    coefficients = method.loc[(b, horizon)] - method.loc[(a, horizon)]
+    return pd.DataFrame(
+        {
+            "flows": flows,
+            "method": coefficients,
+            "total": booked.loc[(b, horizon)] - booked.loc[(a, horizon)],
+        }
+    )
+
+
+def decomposed_waterfall(
+    bridge: pd.DataFrame,
+    technology: pd.DataFrame,
+    horizon: str,
+    a: str,
+    b: str,
+    cutoff: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Return the waterfall from ``a`` to ``b`` with every step split into flows and method.
+
+    The flow steps of all categories come first, then an intermediate total
+    (``a`` plus the system response), then the method steps. See
+    :func:`bridge_decomposition`.
+
+    Parameters
+    ----------
+    bridge
+        Output of :func:`balance_bridge`.
+    technology
+        Output of :func:`technology_bridge` for the same runs.
+    horizon
+        Planning horizon.
+    a, b
+        Scenarios at the start and the end of the waterfall.
+    cutoff
+        Steps with an absolute change below this value are dropped.
+
+    Returns
+    -------
+    :
+        Same columns as :func:`waterfall`; ``group`` is ``total``,
+        ``physical`` (flow steps) or ``accounting`` (method steps).
+    """
+    parts = bridge_decomposition(bridge, technology, horizon, a, b)
+    start, end = bridge.loc[(a, horizon)], bridge.loc[(b, horizon)]
+    rows = [{"step": f"{a}", "group": "total", "value": start["Total"]}]
+    for part, group, label in [
+        ("flows", "physical", "flows"),
+        ("method", "accounting", "method"),
+    ]:
+        for category, delta in parts[part].items():
+            if abs(delta) > cutoff:
+                step = f"Δ {category} ({label})"
+                rows.append({"step": step, "group": group, "value": delta})
+        if part == "flows":
+            response = start["Total"] + parts["flows"].sum()
+            rows.append(
+                {"step": "after system response", "group": "total", "value": response}
+            )
+    rows.append({"step": f"{b}", "group": "total", "value": end["Total"]})
+    return _steps(rows, end["Budget"])
 
 
 # --- consistency ---------------------------------------------------------------

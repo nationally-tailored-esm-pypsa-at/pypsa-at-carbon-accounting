@@ -42,6 +42,7 @@ later steps don't run on broken inputs.
 | 0 Setup | Inputs: result root (default `results/carbon-accounting`); scenario multiselect over the subdirectories with solved networks (default: all); reference selector (default: the first scenario with method `technology`); country selector (default `AT`). Shows the networks found per scenario × horizon, with method and fair-share flag from `n.meta`. ✗ if fewer than two scenarios are selected or the selected scenarios have different horizons. |
 | 1 Consistency | Per horizon: EU total at `co2 atmosphere` equal across all selected runs (P5, rel. tol. 1e-6); attribute stores net zero (I2); national LHS = evals balance (I5); fair-share caps respected in every run with fair share enabled (I6). |
 | 2 National balance bridge | Waterfall, horizon selector. |
+| 2b System response and method | The waterfall of 2 with every step split into flows and method, same selectors. |
 | 3 Cost of the national target | All horizons. |
 | 4 Implicit transfers | Value of the green property and who receives it; horizon selector. |
 | 7 Physical system response | All horizons. |
@@ -95,6 +96,27 @@ Step order: total A → Δ fuel use → Δ process & waste → Δ capture credit
 - The first three steps are **physical** (the system changed); the rest are **accounting**
   (the method changed). The chart marks the two groups visually.
 - A reference line shows the national budget of the horizon.
+
+## (2b) System response and method
+
+The accounting steps of (2) mix two effects: the system runs differently, and the method books
+the same flows differently. Every run is also booked under **technology rules**: its flows with the
+coefficients of the method `technology` (`technology_bridge`; the carrier transformation is
+inverted with `evals.carbon_accounting_pathways.technology_emissions`). With `E_m(f)` the
+categories of flows `f` under method `m` and `E(f)` the categories as booked in the run, the
+change of every category from A to B splits into (`bridge_decomposition`):
+
+- **flows** = `E_tech(f_B) − E_tech(f_A)`: the system response, valued with technology coefficients
+- **method** = `[E(f_B) − E_tech(f_B)] − [E(f_A) − E_tech(f_A)]`: the change of the coefficients at fixed flows
+
+The parts add up exactly to the change in (2). `decomposed_waterfall` shows all flow steps, an
+intermediate total *after system response*, then all method steps.
+
+- Fuel use, process & waste and capture credit have no method part, by construction.
+- Captured CO2 used in synthetic fuels and the claims are 0 under technology rules, so they have
+  no flow part in this order; their flow changes show up in the physical categories.
+- The order is a choice: technology rules are a pure function of the flows. The reverse order
+  would need claims for a technology run, i.e. an allocation rule (e.g. the EU average).
 
 ## (3) Cost of the national target
 

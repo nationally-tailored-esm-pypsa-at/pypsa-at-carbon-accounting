@@ -285,6 +285,74 @@ class TestBridge:
         assert "Δ Process & waste" not in steps.step.to_list()
 
 
+class TestDecomposition:
+    """The bridge change splits into flows (technology rules) and method."""
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def frames(cls):
+        # oil_toy: its idle imports carry the emission factors of the inversion
+        networks = {
+            "base": {"2050": solve(oil_toy(), "technology")},
+            "carrier": {"2050": solve(oil_toy(), "carrier", budgets=("AT",))},
+        }
+        return ca.balance_bridge(networks, "AT"), ca.technology_bridge(networks, "AT")
+
+    def test_technology_run_unchanged(self, frames):
+        bridge, technology = frames
+        assert technology.loc[("base", "2050")].to_numpy() == pytest.approx(
+            bridge.loc[("base", "2050")].to_numpy(), nan_ok=True
+        )
+
+    def test_carrier_run_inverted(self, frames):
+        _, technology = frames
+        # same flows in both toy runs: technology rules give the same balance
+        cols = list(ca.CATEGORIES)
+        assert technology.loc[("carrier", "2050"), cols].to_numpy() == pytest.approx(
+            technology.loc[("base", "2050"), cols].to_numpy(), abs=1e-12
+        )
+
+    def test_parts_add_up(self, frames):
+        parts = ca.bridge_decomposition(*frames, "2050", "base", "carrier")
+        assert (parts.flows + parts.method).to_numpy() == pytest.approx(
+            parts.total.to_numpy()
+        )
+        # same flows: the whole change is the method
+        assert parts.flows.abs().max() == pytest.approx(0.0, abs=1e-12)
+        assert parts.at[ca.BIOFUEL_CREDIT, "method"] == pytest.approx(
+            20 * EF["gas"] / ca.MT
+        )
+
+    def test_split_with_changed_flows(self):
+        index = pd.MultiIndex.from_tuples(
+            [("a", "2050"), ("b", "2050")], names=["scenario", "horizon"]
+        )
+        bridge = pd.DataFrame(0.0, index=index, columns=list(ca.CATEGORIES))
+        technology = bridge.copy()
+        # a: technology run with a biofuel credit of -3; b: carrier run whose
+        # producers make less (-2 under technology rules) and claim 2
+        bridge.loc[("a", "2050"), ca.BIOFUEL_CREDIT] = -3.0
+        technology.loc[("a", "2050"), ca.BIOFUEL_CREDIT] = -3.0
+        technology.loc[("b", "2050"), ca.BIOFUEL_CREDIT] = -2.0
+        bridge.loc[("b", "2050"), "Claims gas"] = -2.0
+        parts = ca.bridge_decomposition(bridge, technology, "2050", "a", "b")
+        assert parts.at[ca.BIOFUEL_CREDIT, "flows"] == pytest.approx(1.0)
+        assert parts.at[ca.BIOFUEL_CREDIT, "method"] == pytest.approx(2.0)
+        assert parts.at["Claims gas", "method"] == pytest.approx(-2.0)
+
+    def test_waterfall_closes(self, frames):
+        steps = ca.decomposed_waterfall(*frames, "2050", "base", "carrier")
+        assert steps.step.to_list()[0] == "base"
+        assert steps.step.to_list()[-1] == "carrier"
+        assert "after system response" in steps.step.to_list()
+        deltas = steps[steps.group != "total"]
+        assert deltas.end.iloc[-1] == pytest.approx(steps.value.iloc[-1])
+        response = steps.set_index("step").at["after system response", "value"]
+        physical = deltas[deltas.group == "physical"]
+        last = physical.end.iloc[-1] if len(physical) else steps.value.iloc[0]
+        assert response == pytest.approx(last)
+
+
 class TestConsistency:
     @pytest.fixture(scope="class")
     @classmethod

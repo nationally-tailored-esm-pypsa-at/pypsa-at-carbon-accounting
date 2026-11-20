@@ -110,7 +110,7 @@ def _(go, mo):
         fig.update_yaxes(title_text=yaxis, zeroline=True, zerolinecolor="#c3c2b7")
         return fig
 
-    return PALETTE, add_waterfall, badge, layout, step_status
+    return GROUP_COLOURS, PALETTE, add_waterfall, badge, layout, step_status
 
 
 @app.cell
@@ -208,6 +208,7 @@ def _(ca, mo):
         networks = {scenario: load(path)}
         return {
             "bridge": ca.balance_bridge(networks, country),
+            "technology": ca.technology_bridge(networks, country),
             "consistency": ca.consistency(networks, country),
             "target": ca.target_cost(networks, country),
             "physical": ca.physical_response(networks, country),
@@ -228,6 +229,7 @@ def _(country, files, mo, pd, scenario_frames, selected):
         _path = str(files[_scenario][next(iter(files[_scenario]))].parents[1])
         _frames[_scenario] = scenario_frames(_path, _scenario, country)
     bridge = pd.concat([f["bridge"] for f in _frames.values()])
+    technology = pd.concat([f["technology"] for f in _frames.values()])
     consistency = pd.concat([f["consistency"] for f in _frames.values()])
     target = pd.concat([f["target"] for f in _frames.values()])
     physical = pd.concat([f["physical"] for f in _frames.values()])
@@ -242,6 +244,7 @@ def _(country, files, mo, pd, scenario_frames, selected):
         physical,
         surplus,
         target,
+        technology,
         transfers,
         values,
     )
@@ -355,6 +358,111 @@ def _(
             mo.accordion(
                 {
                     "Categories (Mt CO2)": mo.ui.table(
+                        _table.round(3).reset_index(names="category"), selection=None
+                    )
+                }
+            ),
+        ]
+    )
+    return
+
+
+@app.cell(expand_output=True)
+def _(
+    GROUP_COLOURS,
+    a_select,
+    add_waterfall,
+    b_select,
+    bridge,
+    ca,
+    country,
+    go,
+    horizon_select,
+    layout,
+    make_subplots,
+    mo,
+    technology,
+):
+    _horizon, _a, _b = horizon_select.value, a_select.value, b_select.value
+    _steps = ca.decomposed_waterfall(bridge, technology, _horizon, _a, _b, cutoff=1e-3)
+    _split = make_subplots(rows=1, cols=1)
+    add_waterfall(_split, _steps)
+    layout(
+        _split,
+        f"{country} {_horizon}: {_a} → {_b}, split into system response and method",
+        "Mt CO2",
+    )
+    _split.update_layout(height=520)
+    _split.add_vrect(
+        x0=0.5,
+        x1=0.5 + (_steps.group == "physical").sum(),
+        fillcolor=GROUP_COLOURS["physical"],
+        opacity=0.05,
+        line_width=0,
+        annotation_text="system response (flows)",
+        annotation_position="top left",
+    )
+
+    _parts = ca.bridge_decomposition(bridge, technology, _horizon, _a, _b)
+    _shown = _parts[_parts[["flows", "method"]].abs().max(axis=1) > 1e-3]
+    _bars = go.Figure()
+    for _part, _group, _name in [
+        ("flows", "physical", "system response (flows)"),
+        ("method", "accounting", "method (coefficients)"),
+    ]:
+        _bars.add_trace(
+            go.Bar(
+                y=_shown.index,
+                x=_shown[_part],
+                name=_name,
+                orientation="h",
+                marker=dict(color=GROUP_COLOURS[_group], line=dict(width=0)),
+                hovertemplate="%{y}<br>%{x:+.2f} Mt<extra>" + _name + "</extra>",
+            )
+        )
+    layout(_bars, f"Δ per category, {_a} → {_b} ({_horizon})", "")
+    _bars.update_layout(barmode="relative", height=120 + 40 * len(_shown))
+    _bars.update_xaxes(title_text="Mt CO2", zeroline=True, zerolinecolor="#c3c2b7")
+    _bars.update_yaxes(autorange="reversed")
+
+    _table = _parts.copy()
+    _table.loc["Total"] = _table.sum()
+    mo.vstack(
+        [
+            mo.md(
+                "## 2b System response and method\n\n"
+                "The accounting steps of section 2 mix two effects: the system runs "
+                "differently, and the method books the same flows differently. Every run "
+                "is therefore also booked with the coefficients of the method "
+                "`technology` (the carrier transformation inverted: biofuel producers "
+                "get their credit back, synthetic fuel producers book nothing, green "
+                "imports draw from the atmosphere, claims vanish). Per category:\n\n"
+                "- **flows** (blue) = B under technology rules − A under technology "
+                "rules: the system response, valued with technology coefficients\n"
+                "- **method** (orange) = (B as booked − B under technology rules) − "
+                "(A as booked − A under technology rules): the change of the "
+                "coefficients at fixed flows\n\n"
+                "The grey bar *after system response* is A plus all flow steps. "
+                "Fuel use, process & waste and capture credit have no method part. "
+                "Captured CO2 used in synthetic fuels and the claims do not exist under "
+                "technology rules, so in this order they have no flow part: their flow "
+                "changes show up in the physical categories. Uses the horizon and "
+                "scenarios selected in section 2."
+                "\n\n---\n\n"
+                "**Description of results:** There is a bit less fuel use (delta fuel use) and less "
+                "carbon capture in Austria (emissions in category Capture credits rise) and far less "
+                "production of biogenic fuels (Biofuels credits rise a lot). The delta Biofuel (method) "
+                "shows the biofuels AT creates and looses credits for, as they are ment for the EU pool "
+                "but this is completely reversed with the next elements Claim Gas and Claim Oil. These are "
+                "the claims, Austria gets from the EU pool. _Overall, emissions shrink a little bit, but mostly "
+                "production is reallocated from Austria to somewhere else. Austria imports in carrier-accounting._"
+            ),
+            mo.hstack([horizon_select, a_select, b_select], justify="start", gap=2),
+            mo.ui.plotly(_split),
+            mo.ui.plotly(_bars),
+            mo.accordion(
+                {
+                    "Decomposition (Mt CO2)": mo.ui.table(
                         _table.round(3).reset_index(names="category"), selection=None
                     )
                 }
