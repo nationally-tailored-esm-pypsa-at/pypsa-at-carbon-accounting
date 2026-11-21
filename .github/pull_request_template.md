@@ -9,6 +9,9 @@ Before asking for a review for this PR make sure to complete the following check
 - [ ] Changes are tested locally and behave as expected.
 - [ ] Code and workflow changes are documented.
 - [ ] A brief description of the changes has been added to `CHANGELOG.AT.md`.
+<!-- --- START: Block Maintained by Carbon Accounting --- -->
+- [ ] Carbon accounting changes: the description is in `CHANGELOG.CA.md` instead of `CHANGELOG.AT.md`, and new logic is documented in `docs-ca/` instead of `docs-at/`. Leave the two `CHANGELOG.AT.md` and `docs-at/` items unchecked.
+<!-- --- END: Block Maintained by Carbon Accounting --- -->
 - [ ] The description is human-written and any AI-generated content is marked.
 
 **If applicable:**
