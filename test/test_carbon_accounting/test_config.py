@@ -4,6 +4,7 @@
 # For license information, see the LICENSE.txt file in the project root.
 """Smoke tests for the reduced carbon accounting configuration."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ CONFIG_STACK = (
     "config/config.default.yaml",
     "config/config.de.yaml",
     "config/config.at.yaml",
+    "config/config.ca.yaml",
     "config/config.carbon-accounting.yaml",
 )
 
@@ -49,3 +51,36 @@ def test_solver_is_gurobi(config):
 def test_scenarios_file_lists_run_names(config):
     scenarios = yaml.safe_load(Path(config["run"]["scenarios"]["file"]).read_text())
     assert set(config["run"]["name"]) <= set(scenarios)
+
+
+def test_snakefile_loads_the_carbon_accounting_config():
+    """The fenced hook loads the CA files after the PyPSA-AT ones."""
+    configfiles = re.findall(
+        r'^configfile: "([^"]+)"', Path("Snakefile").read_text(), re.M
+    )
+    assert configfiles[-2:] == ["config/config.ca.yaml", "config/plotting.ca.yaml"]
+
+
+def test_carbon_accounting_defaults(config):
+    """The CA defaults: feature toggle first, status quo method."""
+    defaults = config["mods"]["carbon_accounting"]
+    assert next(iter(defaults)) == "enable"
+    assert defaults["enable"] is True
+    assert defaults["method"] == "technology"
+
+
+@pytest.mark.parametrize("path", ["config/config.at.yaml", "config/plotting.at.yaml"])
+def test_pypsa_at_config_has_no_carbon_accounting(path):
+    """CA keys stay out of the PyPSA-AT config files (#7)."""
+    assert "carbon_accounting" not in Path(path).read_text()
+
+
+def test_pypsa_at_plotting_has_no_carbon_accounting_colors():
+    """No tech color of the CA overlay is also set in the PyPSA-AT file (#7)."""
+
+    def tech_colors(path):
+        return yaml.safe_load(Path(path).read_text())["plotting"]["tech_colors"]
+
+    ca_colors = tech_colors("config/plotting.ca.yaml")
+    at_colors = tech_colors("config/plotting.at.yaml")
+    assert not ca_colors.keys() & at_colors.keys()
