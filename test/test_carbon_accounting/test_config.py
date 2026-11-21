@@ -73,4 +73,14 @@ def test_carbon_accounting_defaults(config):
 def test_pypsa_at_config_has_no_carbon_accounting(path):
     """CA keys stay out of the PyPSA-AT config files (#7)."""
     assert "carbon_accounting" not in Path(path).read_text()
-    assert "renewable oil claim" not in Path(path).read_text()
+
+
+def test_pypsa_at_plotting_has_no_carbon_accounting_colors():
+    """No tech color of the CA overlay is also set in the PyPSA-AT file (#7)."""
+
+    def tech_colors(path):
+        return yaml.safe_load(Path(path).read_text())["plotting"]["tech_colors"]
+
+    ca_colors = tech_colors("config/plotting.ca.yaml")
+    at_colors = tech_colors("config/plotting.at.yaml")
+    assert not ca_colors.keys() & at_colors.keys()
