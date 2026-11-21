@@ -55,14 +55,15 @@ leaves them in place. The current hooks:
 | `.github/pull_request_template.md` | changelog and docs item for CA changes |
 
 A new hook needs a reason why no CA-owned path can do the job. Add it to this table and
-to `HOOKED` in `test/test_carbon_accounting/test_fork_guard.py`; a new CA-owned path goes
-to `CA_OWNED` there.
+to `HOOKED` in `test/test_carbon_accounting/test_fork_guard.py`; a hook that replaces
+PyPSA-AT lines lists them in `REPLACED` there; a new CA-owned path goes to `CA_OWNED`.
 
 ## Guards
 
 - `test/test_carbon_accounting/test_fork_guard.py` fails when a file outside the CA-owned
   paths differs from PyPSA-AT (merge base with `upstream/main`) without being listed as
-  hooked, or when a hooked file changes outside a fenced block. It skips without the
+  hooked, when a hooked file changes outside a fenced block, or when it drops or changes
+  a PyPSA-AT line that is not listed in `REPLACED` there. It skips without the
   `upstream/main` ref; run it locally after `git fetch upstream`.
 - `.github/workflows/ca-fork-guard.yaml` runs the guard on every PR and push to `main`,
   and every Monday checks with `git merge-tree` that `main` still merges `upstream/main`

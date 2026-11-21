@@ -18,6 +18,7 @@ Needs the PyPSA-AT ref ``upstream/main`` (override with ``CA_UPSTREAM_REF``):
 import os
 import re
 import subprocess
+from collections import Counter
 from functools import cache
 
 import pytest
@@ -52,6 +53,18 @@ HOOKED = (
     ".github/pull_request_template.md",
 )
 
+# PyPSA-AT lines that a fenced hook replaces, per hooked file (stripped). Any
+# other PyPSA-AT line that a hooked file drops or changes fails the guard.
+REPLACED = {
+    "scripts/pypsa-at/additional_functionality.py": (
+        "constraint_national_co2_budgets(n, snakemake, investment_year)",
+    ),
+    "evals/views/balances.py": (
+        "mask_carrier = (",
+        'co2_balance.index.get_level_values(DM.CARRIER) == "kerosene for aviation"',
+    ),
+}
+
 START = "--- START: Block Maintained by Carbon Accounting ---"
 END = "--- END: Block Maintained by Carbon Accounting ---"
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
@@ -72,7 +85,8 @@ def _merge_base() -> str:
 
 
 def _changed_files() -> list[str]:
-    return _git("diff", "--name-only", _merge_base()).split()
+    # without rename detection, a moved file lists its source path as well
+    return _git("diff", "--name-only", "--no-renames", _merge_base()).split()
 
 
 def is_ca_owned(path: str) -> bool:
@@ -122,9 +136,9 @@ def unfenced_changes(diff: str, lines: list[str]) -> list[int]:
     Returns
     -------
     :
-        Added lines outside a fence, and for pure deletions the line after
-        which they happened, if no fence touches it. Blank lines added right
-        next to a fence are allowed (formatters insert them).
+        Added lines outside a fence. Blank lines added right next to a fence
+        are allowed (formatters insert them). Deleted lines are checked by
+        :func:`removed_lines`.
     """
     fenced = fenced_lines(lines)
     outside = []
@@ -133,10 +147,6 @@ def unfenced_changes(diff: str, lines: list[str]) -> list[int]:
         if not match:
             continue
         first, count = int(match[1]), int(match[2] or 1)
-        if count == 0:  # deletion after line `first`
-            if not {first, first + 1} & fenced:
-                outside.append(first)
-            continue
         for number in range(first, first + count):
             if number in fenced:
                 continue
@@ -145,6 +155,30 @@ def unfenced_changes(diff: str, lines: list[str]) -> list[int]:
                 continue
             outside.append(number)
     return outside
+
+
+def removed_lines(diff: str, replaced: tuple[str, ...] = ()) -> list[str]:
+    """
+    Return the PyPSA-AT lines that a diff drops or changes, apart from ``replaced``.
+
+    Parameters
+    ----------
+    diff
+        Output of ``git diff -U0`` for one file.
+    replaced
+        Stripped PyPSA-AT lines that a fenced hook may replace.
+
+    Returns
+    -------
+    :
+        Stripped removed lines that are not blank and not in ``replaced``.
+    """
+    removed = Counter(
+        line[1:].strip()
+        for line in diff.splitlines()
+        if line.startswith("-") and not line.startswith("---") and line[1:].strip()
+    )
+    return sorted((removed - Counter(replaced)).elements())
 
 
 def test_only_ca_owned_or_hooked_files_differ_from_pypsa_at():
@@ -164,12 +198,19 @@ def test_only_ca_owned_or_hooked_files_differ_from_pypsa_at():
 def test_hooked_files_change_only_inside_fences(path):
     if path not in _changed_files():
         pytest.skip(f"{path} is identical to PyPSA-AT")
+    summary = _git("diff", "--summary", "--numstat", _merge_base(), "--", path)
+    assert "mode change" not in summary, f"{path} changes its file mode"
+    assert not summary.startswith("-\t-\t"), f"{path} has a binary change"
     diff = _git("diff", "-U0", _merge_base(), "--", path)
     with open(path) as f:
         lines = f.read().splitlines()
     assert not unfenced_changes(diff, lines), (
         f"{path} changes PyPSA-AT outside fenced carbon accounting blocks at lines "
         f"{unfenced_changes(diff, lines)}"
+    )
+    assert not removed_lines(diff, REPLACED.get(path, ())), (
+        f"{path} drops or changes PyPSA-AT lines {removed_lines(diff)}. Keep them, or "
+        "replace them in a fenced hook and list them in REPLACED."
     )
 
 
@@ -194,8 +235,22 @@ class TestUnfencedChanges:
     def test_change_outside_fence_fails(self):
         assert unfenced_changes("@@ -6 +6 @@", self.LINES) == [6]
 
-    def test_deletion_outside_fence_fails(self):
-        assert unfenced_changes("@@ -7 +5,0 @@", self.LINES + ["c", "d"]) == [5]
+    def test_removed_line_fails(self):
+        diff = "@@ -7 +5,0 @@\n-c"
+        assert removed_lines(diff) == ["c"]
+
+    def test_line_removed_next_to_fence_fails(self):
+        # a fence added next to a deletion does not cover it
+        diff = f"@@ -2 +2,3 @@\n-old\n+# {START}\n+hook\n+# {END}"
+        assert unfenced_changes(diff, self.LINES) == []
+        assert removed_lines(diff) == ["old"]
+
+    def test_replaced_line_passes(self):
+        diff = f"@@ -2 +2,3 @@\n-    old()\n+# {START}\n+hook\n+# {END}"
+        assert removed_lines(diff, ("old()",)) == []
+
+    def test_removed_blank_line_passes(self):
+        assert removed_lines("@@ -3 +2,0 @@\n-") == []
 
     @pytest.mark.parametrize(
         "path, owned",

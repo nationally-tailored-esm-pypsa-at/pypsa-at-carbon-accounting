@@ -23,6 +23,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# PR code runs in pytest: read-only token, not persisted in the checkout
+permissions:
+  contents: read
+
 env:
   UPSTREAM_URL: https://github.com/AGGM-AG/pypsa-at.git
 
@@ -38,6 +42,7 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
+        persist-credentials: false
 
     - name: Fetch PyPSA-AT
       run: |
@@ -63,6 +68,7 @@ jobs:
       with:
         ref: main
         fetch-depth: 0
+        persist-credentials: false
 
     - name: Fetch PyPSA-AT
       run: |
