@@ -83,8 +83,11 @@ PyPSA-AT lines lists them in `REPLACED` there; a new CA-owned path goes to `CA_O
 - **Evals:** `evals/carbon_accounting/` mirrors the CA carrier lists of
   `mods/carbon_accounting/constants.py` instead of importing `mods`; a test checks the
   mirror.
-- **Failing evals in CA runs are expected.** `export_evaluation_pypsa_at` and
-  `validate_pypsa_at` may fail for the `CA_*` scenarios; that is not a CA bug.
+- **Known failures in CA runs.** The `CA_*` scenarios are reduced runs, so these
+  failures of `export_evaluation_pypsa_at` and `validate_pypsa_at` are expected and not a
+  CA bug: the evals for `co2 compression` (missing group name) and
+  `view_timeseries_carbon`, and the AT tests `test_custom_clustering` and
+  `test_austrian_electricity_demand_matches_onip`. Investigate any other failure.
 
 ## Branches and upstream sync
 
