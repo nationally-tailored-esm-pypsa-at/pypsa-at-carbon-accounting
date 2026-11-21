@@ -190,7 +190,7 @@ Only AT and DE have national budgets; the other countries' claims only matter fo
 3. **Full retirement (D5)** follows from the cyclic attribute stores: over the year,
    attributes generated = attributes claimed. No extra constraint is needed. Attributes cannot
    leave the system any other way (no sink, no vent).
-4. **Aviation (D8)** in `co2_budget.py`: carrier `renewable oil claim aviation` is excluded from
+4. **Aviation (D8)** in the CA national budget (`mods/carbon_accounting/budget.py`): carrier `renewable oil claim aviation` is excluded from
    the per-port loop and added scaled by α, like `kerosene for aviation`.
    `methanol-to-kerosene` stays unscaled (D11); green methanol for it is claimed via
    `renewable methanol claim` at full EF.
@@ -414,13 +414,19 @@ def constraint_carbon_accounting(n, snakemake, investment_year: int) -> None:
     """Guard on enable/method; add constraints 3.3 (1) and (2) to n.model."""
 ```
 
-- Registered in `mods/__init__.py` and called in `scripts/pypsa-at/additional_functionality.py`
-  after `constraint_national_co2_budgets`.
+- Re-exported from `mods/carbon_accounting/__init__.py` and called in a fenced hook in
+  `scripts/pypsa-at/additional_functionality.py`, after the national CO2 budget.
 - Constraint names: `carbon_accounting-claim-{CT}-{fuel}`, `carbon_accounting-transfer-{X}-{Y}`.
 
-`mods/constraints/co2_budget.py`: exclude `renewable oil claim aviation` from the port loop,
-add it scaled by α (the same code path as `kerosene for aviation`). In `technology` mode the
-carrier doesn't exist, so the change is a no-op.
+`mods/carbon_accounting/budget.py`: the national CO2 budget of the carbon accounting
+(`constraint_national_co2_budgets_ca`). It replaces PyPSA-AT's
+`constraint_national_co2_budgets` (`mods/constraints/co2_budget.py`, kept identical to
+PyPSA-AT) whenever `mods.carbon_accounting.enable` is set. Differences: it excludes
+`renewable oil claim aviation` from the port loop and adds it scaled by α (the same code
+path as `kerosene for aviation`), and it reads the efficiency of aviation links at their
+`co2 atmosphere` port. In `technology` mode the claim carrier doesn't exist, so both
+budgets are equal; a drift test (`test/test_carbon_accounting/test_mods/test_budget.py`)
+fails when PyPSA-AT changes its budget.
 
 `mods/carbon_accounting/constants.py`: the carrier lists of 3.2 (`GREEN_BIO_PRODUCERS`, `GREEN_SYNTHETIC_PRODUCERS`,
 `GREEN_IMPORTS`, `CAPTURE`, `SEQUESTRATION`, `VENT`, `FUEL_TRANSPORT`) and the accounting carriers.
