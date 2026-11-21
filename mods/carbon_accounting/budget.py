@@ -14,6 +14,7 @@ import logging
 
 import pandas as pd
 import pypsa
+from snakemake.script import Snakemake
 
 from mods.carbon_accounting.constants import AVIATION_CARRIERS
 
@@ -67,7 +68,7 @@ def carbon_accounting_enabled(config: dict) -> bool:
 
 
 def constraint_national_co2_budgets_ca(
-    n: pypsa.Network, snakemake, investment_year: int
+    n: pypsa.Network, snakemake: Snakemake, investment_year: int
 ) -> None:
     """
     Add the national CO2 budgets of the carbon accounting.
