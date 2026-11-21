@@ -8,7 +8,7 @@ Annual bounds of the carrier-based carbon accounting method.
 Countries can claim green fuel attributes up to their own consumption, and gas
 attributes only travel as far as the gas does. Optionally, the pooled claims
 of countries with a national budget are capped at their fair share. See
-sections 3.3 and 3.6 of ``docs-at/explanations/carbon-accounting-spec.md``.
+sections 3.3 and 3.6 of ``docs-ca/explanations/carbon-accounting-spec.md``.
 """
 
 import logging

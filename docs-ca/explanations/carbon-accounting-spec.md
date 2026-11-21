@@ -1,11 +1,12 @@
 # Specification: Carbon Accounting Methods
 
-!!! note "Status: implemented"
-    Specification of the implementation in `mods/carbon_accounting/network.py` and
-    `mods/carbon_accounting/constraints.py`. AI-assisted draft. Decisions D0–D18 are
-    agreed with the author; team review is pending. Inventory and figures are taken from
-    `resources/carbon-accounting/CA_base/networks/composed_{2025,2050}.nc` and
-    `results/carbon-accounting/CA_base/networks/solved_2050.nc`.
+> [!NOTE]
+> **Status: implemented**
+> Specification of the implementation in `mods/carbon_accounting/network.py` and
+> `mods/carbon_accounting/constraints.py`. AI-assisted draft. Decisions D0–D18 are
+> agreed with the author; team review is pending. Inventory and figures are taken from
+> `resources/carbon-accounting/CA_base/networks/composed_{2025,2050}.nc` and
+> `results/carbon-accounting/CA_base/networks/solved_2050.nc`.
 
 ## 1. Goal
 
@@ -195,28 +196,29 @@ Only AT and DE have national budgets; the other countries' claims only matter fo
    `methanol-to-kerosene` stays unscaled (D11); green methanol for it is claimed via
    `renewable methanol claim` at full EF.
 
-!!! note "Endogenous allocation"
-    Within the bounds, the optimiser assigns credits to the country where they save the most,
-    i.e. where the national budget binds. For oil and methanol this effectively works
-    like emission trading between AT and DE. Countries without a national budget don't compete
-    for credits (D14, accepted and reported in the evals).
-
-    While no national budget binds, the optimiser is indifferent to who claims. A first run
-    without a tie-break gave AT 28.6 Mt of oil credits in 2025 (1.1 Mt at the EU-average
-    share). Therefore the claims of countries with a national budget carry a small cost
-    (`claim_cost`, D16): they claim only what their budget needs.
-
-    The claim cost is not a real cost and is irrelevant for a country's system costs. At
-    0.01 EUR/t, Austria's 17.5 Mt of claims in CA_carrier 2025 cost 0.18 MEUR, which is
-    negligible against the system costs and too small to change investment or dispatch:
-    claims only move credits between countries, while the physical flows stay the same.
-    It is needed for reasonable
-    solver outputs: without it, the split of the credits is degenerate, and the solver
-    returns an arbitrary, non-reproducible allocation.
-
-    As a consequence, in years when the national budget doesn't bind, countries with a
-    budget report their **maximum** emissions, not a neutral allocation: they leave all
-    credits they don't need to the other countries.
+> [!NOTE]
+> **Endogenous allocation**
+> Within the bounds, the optimiser assigns credits to the country where they save the most,
+> i.e. where the national budget binds. For oil and methanol this effectively works
+> like emission trading between AT and DE. Countries without a national budget don't compete
+> for credits (D14, accepted and reported in the evals).
+>
+> While no national budget binds, the optimiser is indifferent to who claims. A first run
+> without a tie-break gave AT 28.6 Mt of oil credits in 2025 (1.1 Mt at the EU-average
+> share). Therefore the claims of countries with a national budget carry a small cost
+> (`claim_cost`, D16): they claim only what their budget needs.
+>
+> The claim cost is not a real cost and is irrelevant for a country's system costs. At
+> 0.01 EUR/t, Austria's 17.5 Mt of claims in CA_carrier 2025 cost 0.18 MEUR, which is
+> negligible against the system costs and too small to change investment or dispatch:
+> claims only move credits between countries, while the physical flows stay the same.
+> It is needed for reasonable
+> solver outputs: without it, the split of the credits is degenerate, and the solver
+> returns an arbitrary, non-reproducible allocation.
+>
+> As a consequence, in years when the national budget doesn't bind, countries with a
+> budget report their **maximum** emissions, not a neutral allocation: they leave all
+> credits they don't need to the other countries.
 
 ### 3.4 Imports (D10)
 
@@ -307,8 +309,9 @@ all countries together equal G_f.
 
 ### 3.7 Contribution cap (TODO, D19)
 
-!!! warning "Open"
-    Not specified or implemented yet.
+> [!WARNING]
+> **Open**
+> Not specified or implemented yet.
 
 **Problem.** Neither the consumption bound (3.3, item 1) nor the fair share (3.6) depends on the
 country's own production. A country can claim more pooled credits than it adds to the pool, up to

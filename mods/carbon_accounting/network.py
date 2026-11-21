@@ -12,7 +12,7 @@ factor in the consuming country. It adds an accounting layer of attribute
 buses, stores and claim links. Captured CO2 is credited at capture, as in the
 ``technology`` method, and charged again where it is used for synthetic fuels.
 See
-``docs-at/explanations/carbon-accounting-spec.md``.
+``docs-ca/explanations/carbon-accounting-spec.md``.
 """
 
 from logging import getLogger

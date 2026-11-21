@@ -236,7 +236,7 @@ For the selected country, values of each selected scenario and Δ vs the referen
 | 5 | Cost in the country | asset cost + trade value at boundary-bus prices, see *Cost in the country* |
 | 6 | Code layout | all functions in one new module `evals/carbon_accounting/accounting.py`, reusing existing functions |
 | 7 | Summary table | emissions vs budget and cost Δ (EU and CT); no prices |
-| 8 | Docs nav | neither this spec nor the notebook gets a `mkdocs.yml` nav entry |
+| 8 | Docs nav | the spec lives in the Markdown-only carbon accounting docs (`docs-ca/`, #7); the PyPSA-AT `mkdocs.yml` gets no entry |
 | 9 | Budget regime | four regimes (`slack`, `physical`, `pool-scarce`, `paper`), classified from duals and pool claims, see *Budget regime* |
 | 10 | Number of scenarios | any number ≥ 2, found in the result root; Δ always vs a selectable reference |
 

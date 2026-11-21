@@ -36,16 +36,18 @@ The evaluations export (`export_evaluation_pypsa_at`) adds about 16 minutes.
 Everything else is inherited: all countries, the planning horizons 2025, 2030,
 2040 and 2050 (myopic), `365h` temporal averaging, and all `mods:` features.
 
-!!! note "Why not one node for Austria and Germany?"
-    The PyPSA-AT custom clustering (`mods.clustering.custom`) only supports
-    `AT10DE5`, `AT10DE16`, `AT35DE5` and `AT35DE16`. Several modifications
-    (the AGGM gas grid, KLIEN potentials, the TYNDP node mappings) rely on it.
-    `AT10DE5` is therefore the smallest supported resolution.
+> [!NOTE]
+> **Why not one node for Austria and Germany?**
+> The PyPSA-AT custom clustering (`mods.clustering.custom`) only supports
+> `AT10DE5`, `AT10DE16`, `AT35DE5` and `AT35DE16`. Several modifications
+> (the AGGM gas grid, KLIEN potentials, the TYNDP node mappings) rely on it.
+> `AT10DE5` is therefore the smallest supported resolution.
 
-!!! note "Why keep 2025?"
-    The base-year demand calibration (heat, transport, electricity base load)
-    uses the first planning horizon and `demand.source_years`. 2025 remains the
-    calibrated starting point, so 2030 inherits a realistic brownfield.
+> [!NOTE]
+> **Why keep 2025?**
+> The base-year demand calibration (heat, transport, electricity base load)
+> uses the first planning horizon and `demand.source_years`. 2025 remains the
+> calibrated starting point, so 2030 inherits a realistic brownfield.
 
 ## Scenarios
 
@@ -54,7 +56,7 @@ Everything else is inherited: all countries, the planning horizons 2025, 2030,
 | `CA_base` | `technology`: emissions are attached to the technology. the technology books the co2, irrespective of the fuel it uses. |
 | `CA_carrier` | `carrier`: emissions are attached to the carriers. green fuels book zero, fossil fuels book co2. For mixed networks, countries claim green certificates for accounting for green fuel combustion. |
 
-See [Carbon accounting methods](../explanations/co2-balancing.md#carbon-accounting-methods)
+See [Carbon accounting methods](../explanations/carbon-accounting-methods.md)
 for the difference. To run only one scenario, request its last solved network, e.g.
 
 ```bash
