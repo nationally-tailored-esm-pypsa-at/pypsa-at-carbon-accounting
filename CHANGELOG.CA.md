@@ -1,0 +1,19 @@
+# Changelog of the carbon accounting fork
+
+Changes of this fork on top of [PyPSA-AT](https://github.com/AGGM-AG/pypsa-at). Changes of
+PyPSA-AT itself are in `CHANGELOG.AT.md`, which stays identical to PyPSA-AT.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+---
+
+## [Unreleased]
+
+### Added
+- Switchable carbon accounting method `mods.carbon_accounting.method` (default `technology`, the status quo). With `carrier`, green gas, oil and methanol book zero at production and use, the consuming country claims green certificates up to its own consumption (gas only along physical pipeline flows), and captured CO2 counts as negative emissions in the capturing country unless it is used for e-fuels (the e-fuel plant books the CO2 it uses). The EU-wide total is unchanged; scenario `CA_carrier` in the carbon-accounting config and the evaluation view `view_balance_carbon_claims` compare the methods
+- Optional fair share for the carrier-based carbon accounting (`mods.carbon_accounting.fair_share`, default off): pooled oil, kerosene and methanol claims of countries with a national CO2 budget are capped at their share of the EU's fixed demand times the EU green production; scenario `CA_carrier_fair` and a cap group in `view_balance_carbon_claims`
+- Marimo notebook `evals/carbon_accounting/notebooks/carbon_accounting.py` (with `evals/carbon_accounting/accounting.py`) comparing carbon accounting runs for one country: consistency checks, a national CO2 balance bridge (physical vs accounting steps, and every step split into system response and accounting method), the cost of the national target with a budget regime, the implicit transfers of green fuel attributes (who receives the value of a green MWh and of the national CO2 price, money through the attribute pools per country), and the physical system response
+- Marimo notebook `evals/carbon_accounting/notebooks/carbon_accounting_pathways.py` (with `evals/carbon_accounting/pathways.py`) evaluating every carbon accounting scenario for all horizons under the evaluators `CA_technology` and `CA_carrier`, which read the same network elements and differ only in which categories they count (claims count 0 in technology runs), to compare national totals, budget gaps, the gap of every evaluator to the scenario's own method over all horizons, and decarbonisation pathways in the categories of the national balance bridge
+- Reduced configuration `config/config.carbon-accounting.yaml` (AT10DE5, Gurobi) as a fast base for comparing carbon accounting methods; each myopic horizon composes and solves in about 3.5 minutes
+
+### Changed
+- The carbon accounting lives in its own paths (#7): code in `mods/carbon_accounting/`, `evals/carbon_accounting/` and `test/test_carbon_accounting/`, defaults in `config/config.ca.yaml` and `config/plotting.ca.yaml` (loaded after the PyPSA-AT config), docs in `docs-ca/`. With `mods.carbon_accounting.enable`, the carbon accounting's own national CO2 budget replaces the PyPSA-AT one; both are equal under the method `technology`

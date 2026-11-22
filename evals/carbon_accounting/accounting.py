@@ -5,13 +5,13 @@
 """
 Compare runs of the carbon accounting configuration for one country.
 
-Backs the notebook ``evals/notebooks/carbon_accounting.py``. Functions that
+Backs the notebook ``evals/carbon_accounting/notebooks/carbon_accounting.py``. Functions that
 read networks take a mapping scenario -> horizon -> network and return frames
 with a ``scenario`` and a ``horizon`` level, so they work for any number of
 scenarios. Functions that compare scenarios take these frames and a reference
-scenario. See ``docs-at/explanations/carbon-accounting-eval-spec.md``.
+scenario. See ``docs-ca/explanations/carbon-accounting-eval-spec.md``.
 
-The carrier lists mirror ``mods.constants``; the evals do not import ``mods``.
+The carrier lists mirror ``mods.carbon_accounting.constants``; the evals do not import ``mods``.
 """
 
 import json
@@ -25,22 +25,21 @@ import pandas as pd
 import pypsa
 import xarray as xr
 
-from evals.constants import AVIATION_CARRIERS, FUEL_CLAIM_CARRIERS
-from evals.fileio import read_networks
-from evals.utils import (
+from evals.carbon_accounting.constants import AVIATION_CARRIERS, FUEL_CLAIM_CARRIERS
+from evals.carbon_accounting.utils import (
     claimable_consumption,
     fair_share_caps,
-    get_energy_totals_domestic_share,
-    get_location,
     pool_inflow,
     scale_domestic_aviation,
 )
+from evals.fileio import read_networks
+from evals.utils import get_energy_totals_domestic_share, get_location
 
 Networks = Mapping[str, Mapping[str, pypsa.Network]]
 
 ATMOSPHERE = "co2 atmosphere"
 EU_CO2_LIMIT = "CO2Limit-upper"
-# mirrors mods.constants (carbon accounting classes, spec section 3.2)
+# mirrors mods.carbon_accounting.constants (carbon accounting classes, spec section 3.2)
 GREEN_BIO_PRODUCERS: tuple[str, ...] = (
     "biogas to gas",
     "biogas to gas CC",
@@ -95,7 +94,7 @@ CLAIM_KINDS: dict[str, str] = {
     "renewable oil claim aviation": "oil aviation",
     "renewable methanol claim": "methanol",
 }
-# links of the accounting layer that move attributes, mirrors mods.constants
+# links of the accounting layer that move attributes, mirrors mods.carbon_accounting.constants
 ACCOUNTING_LINK_CARRIERS: tuple[str, ...] = (
     *CLAIM_KINDS,
     TRANSFER_CARRIER,
@@ -443,7 +442,7 @@ def link_categories(
     and the rest of their emission, which goes to the category of the link.
     Kerosene and kerosene claims are scaled with the domestic aviation share
     of their country, as the national CO2 budget does
-    (``mods.constraints.co2_budget``).
+    (``mods.carbon_accounting.budget``).
 
     Parameters
     ----------
@@ -532,7 +531,7 @@ def national_co2_categories(
 
     Selects links by name prefix and scales kerosene and kerosene claims with
     the domestic aviation share, as the national CO2 budget does
-    (``mods.constraints.co2_budget``), so the categories add up to the
+    (``mods.carbon_accounting.budget``), so the categories add up to the
     left-hand side of ``co2_limit-{country}``. Links that capture CO2 split
     into the capture credit (the CO2 captured) and the rest of their
     emission, which goes to the category of the link.
@@ -695,7 +694,7 @@ def bridge_decomposition(
         Output of :func:`balance_bridge`.
     technology
         Output of
-        :func:`evals.carbon_accounting_pathways.evaluated_bridge` with
+        :func:`evals.carbon_accounting.pathways.evaluated_bridge` with
         ``CA_technology`` for the same scenarios.
     horizon
         Planning horizon.
@@ -743,7 +742,7 @@ def decomposed_waterfall(
         Output of :func:`balance_bridge`.
     technology
         Output of
-        :func:`evals.carbon_accounting_pathways.evaluated_bridge` with
+        :func:`evals.carbon_accounting.pathways.evaluated_bridge` with
         ``CA_technology`` for the same scenarios.
     horizon
         Planning horizon.
@@ -958,7 +957,7 @@ def credit_bounds(n: pypsa.Network, country: str) -> pd.DataFrame:
     with ``mu`` the national CO2 price and ``credit`` the national credit per
     MWh (the emission factor, times the domestic aviation share for
     kerosene). Names follow the constraints in
-    ``mods.constraints.carbon_accounting``.
+    ``mods.carbon_accounting.constraints``.
 
     Parameters
     ----------

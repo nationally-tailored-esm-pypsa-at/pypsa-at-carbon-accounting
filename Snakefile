@@ -33,6 +33,13 @@ configfile: "config/plotting.default.yaml"
 configfile: "config/config.de.yaml"
 configfile: "config/config.at.yaml"  # AT10 default configuration
 configfile: "config/plotting.at.yaml"  # AT-specific tech_colors overlay (last word on plotting)
+# --- START: Block Maintained by Carbon Accounting ---
+# carbon accounting defaults and tech_colors, kept in CA-owned files
+configfile: "config/config.ca.yaml"
+configfile: "config/plotting.ca.yaml"
+
+
+# --- END: Block Maintained by Carbon Accounting ---
 
 
 validated = validate_config(config)

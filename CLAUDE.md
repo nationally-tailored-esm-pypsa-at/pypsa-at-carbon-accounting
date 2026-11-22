@@ -316,3 +316,8 @@ To add or bump a dataset: add a row to `data/versions.csv` (both `primary` and
   orchestrator is invisible to `scripts/` until it is added to `__all__` there
 - Scripts under `scripts/pypsa-at/` live in a hyphenated directory (not a valid Python
   package name); `pytest.ini`'s `pythonpath` is what makes them importable in tests
+
+<!-- --- START: Block Maintained by Carbon Accounting --- -->
+<!-- rules of the carbon accounting fork; they win for carbon accounting work -->
+@CLAUDE.CA.md
+<!-- --- END: Block Maintained by Carbon Accounting --- -->

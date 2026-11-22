@@ -8,16 +8,16 @@ Emissions of carbon accounting scenarios under every accounting method (marimo).
 Evaluates every scenario of the carbon accounting configuration for all
 planning horizons under the evaluators ``CA_technology`` and ``CA_carrier``,
 split into the categories of the national balance bridge
-of ``evals/notebooks/carbon_accounting.py``, and answers:
+of ``evals/carbon_accounting/notebooks/carbon_accounting.py``, and answers:
 
 1. Are different evaluation methods needed for the two accounting methods?
 2. How do they differ, and what happens if they are applied vice versa?
 3. How do the decarbonisation pathways of the approaches differ?
 
-All computations live in ``evals/carbon_accounting_pathways.py``. Run it from
+All computations live in ``evals/carbon_accounting/pathways.py``. Run it from
 the repository root with
 
-    pixi run marimo edit evals/notebooks/carbon_accounting_pathways.py
+    pixi run marimo edit evals/carbon_accounting/notebooks/carbon_accounting_pathways.py
 """
 
 import marimo
@@ -35,12 +35,12 @@ def _():
     import pandas as pd
     import plotly.graph_objects as go
 
-    REPO = Path(__file__).resolve().parents[2]
+    REPO = Path(__file__).resolve().parents[3]
     if str(REPO) not in sys.path:
         sys.path.insert(0, str(REPO))
 
-    from evals import carbon_accounting as ca
-    from evals import carbon_accounting_pathways as cp
+    from evals.carbon_accounting import accounting as ca
+    from evals.carbon_accounting import pathways as cp
 
     return REPO, ca, cp, go, mo, pd
 

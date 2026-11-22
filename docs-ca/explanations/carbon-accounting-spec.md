@@ -1,11 +1,12 @@
 # Specification: Carbon Accounting Methods
 
-!!! note "Status: implemented"
-    Specification of the implementation in `mods/network/carbon_accounting.py` and
-    `mods/constraints/carbon_accounting.py`. AI-assisted draft. Decisions D0–D18 are
-    agreed with the author; team review is pending. Inventory and figures are taken from
-    `resources/carbon-accounting/CA_base/networks/composed_{2025,2050}.nc` and
-    `results/carbon-accounting/CA_base/networks/solved_2050.nc`.
+> [!NOTE]
+> **Status: implemented**
+> Specification of the implementation in `mods/carbon_accounting/network.py` and
+> `mods/carbon_accounting/constraints.py`. AI-assisted draft. Decisions D0–D18 are
+> agreed with the author; team review is pending. Inventory and figures are taken from
+> `resources/carbon-accounting/CA_base/networks/composed_{2025,2050}.nc` and
+> `results/carbon-accounting/CA_base/networks/solved_2050.nc`.
 
 ## 1. Goal
 
@@ -70,7 +71,7 @@ This is how the model behaves today. It needs no changes and is the reference.
 ### 3.2 Link inventory and transformation rules
 
 Every link in the network falls into exactly one class. Classification goes by `carrier`.
-The lists live in `mods/constants.py`. A test fails if a link with a port at `co2 atmosphere`,
+The lists live in `mods/carbon_accounting/constants.py`. A test fails if a link with a port at `co2 atmosphere`,
 `co2 stored`, `gas`, `oil` or `methanol` has an unclassified carrier (fail early on upstream changes).
 
 Notation: `atm` = efficiency at the `co2 atmosphere` port (−1 for bus0), `stored` = efficiency
@@ -160,7 +161,7 @@ from ordinary PyPSA components, so `n.statistics` and the evals see it without s
 | Link (claim) | `{CT} renewable gas claim`, `{CT} renewable oil claim`, `{CT} renewable oil claim aviation`, `{CT} renewable methanol claim` | bus0 `{CT} … attribute` (country bus), bus1 `co2 atmosphere` | `efficiency = −EF`, `p_nom = 1e9` |
 | Claim cost (D16) | `marginal_cost` of the claim links of countries with a national budget | | `claim_cost × EF`, i.e. EUR per t credited |
 | Link (transfer) | `{X} renewable gas attribute -> {Y}` for every pair X≠Y connected by a gas pipeline | `{X} … attribute` → `{Y} … attribute` | `efficiency = 1`, `p_nom = 1e9` |
-| Carriers | the attribute, claim and transfer carriers above, `{attribute carrier} distribution` and `renewable gas attribute transfer`, plus `co2 import` | | colours in `config/plotting.at.yaml` |
+| Carriers | the attribute, claim and transfer carriers above, `{attribute carrier} distribution` and `renewable gas attribute transfer`, plus `co2 import` | | colours in `config/plotting.ca.yaml` |
 
 Claim links exist for every country that has nodes. They carry the country prefix
 (`co2_budget.py` selects links by name). Their bus0 is always a country bus with
@@ -170,7 +171,7 @@ through a country bus first. The country buses balance per snapshot via the unbo
 distribution links, so they need no store.
 Only AT and DE have national budgets; the other countries' claims only matter for retirement (D14).
 
-**Annual constraints** (in `mods/constraints/carbon_accounting.py`). Let w_t be
+**Annual constraints** (in `mods/carbon_accounting/constraints.py`). Let w_t be
 `snapshot_weightings.generators` and `P(l) = Σ_t w_t · p0(l, t)`.
 
 1. **Claim bound (D4, D7)**, per country CT and fuel f:
@@ -190,33 +191,34 @@ Only AT and DE have national budgets; the other countries' claims only matter fo
 3. **Full retirement (D5)** follows from the cyclic attribute stores: over the year,
    attributes generated = attributes claimed. No extra constraint is needed. Attributes cannot
    leave the system any other way (no sink, no vent).
-4. **Aviation (D8)** in `co2_budget.py`: carrier `renewable oil claim aviation` is excluded from
+4. **Aviation (D8)** in the CA national budget (`mods/carbon_accounting/budget.py`): carrier `renewable oil claim aviation` is excluded from
    the per-port loop and added scaled by α, like `kerosene for aviation`.
    `methanol-to-kerosene` stays unscaled (D11); green methanol for it is claimed via
    `renewable methanol claim` at full EF.
 
-!!! note "Endogenous allocation"
-    Within the bounds, the optimiser assigns credits to the country where they save the most,
-    i.e. where the national budget binds. For oil and methanol this effectively works
-    like emission trading between AT and DE. Countries without a national budget don't compete
-    for credits (D14, accepted and reported in the evals).
-
-    While no national budget binds, the optimiser is indifferent to who claims. A first run
-    without a tie-break gave AT 28.6 Mt of oil credits in 2025 (1.1 Mt at the EU-average
-    share). Therefore the claims of countries with a national budget carry a small cost
-    (`claim_cost`, D16): they claim only what their budget needs.
-
-    The claim cost is not a real cost and is irrelevant for a country's system costs. At
-    0.01 EUR/t, Austria's 17.5 Mt of claims in CA_carrier 2025 cost 0.18 MEUR, which is
-    negligible against the system costs and too small to change investment or dispatch:
-    claims only move credits between countries, while the physical flows stay the same.
-    It is needed for reasonable
-    solver outputs: without it, the split of the credits is degenerate, and the solver
-    returns an arbitrary, non-reproducible allocation.
-
-    As a consequence, in years when the national budget doesn't bind, countries with a
-    budget report their **maximum** emissions, not a neutral allocation: they leave all
-    credits they don't need to the other countries.
+> [!NOTE]
+> **Endogenous allocation**
+> Within the bounds, the optimiser assigns credits to the country where they save the most,
+> i.e. where the national budget binds. For oil and methanol this effectively works
+> like emission trading between AT and DE. Countries without a national budget don't compete
+> for credits (D14, accepted and reported in the evals).
+>
+> While no national budget binds, the optimiser is indifferent to who claims. A first run
+> without a tie-break gave AT 28.6 Mt of oil credits in 2025 (1.1 Mt at the EU-average
+> share). Therefore the claims of countries with a national budget carry a small cost
+> (`claim_cost`, D16): they claim only what their budget needs.
+>
+> The claim cost is not a real cost and is irrelevant for a country's system costs. At
+> 0.01 EUR/t, Austria's 17.5 Mt of claims in CA_carrier 2025 cost 0.18 MEUR, which is
+> negligible against the system costs and too small to change investment or dispatch:
+> claims only move credits between countries, while the physical flows stay the same.
+> It is needed for reasonable
+> solver outputs: without it, the split of the credits is degenerate, and the solver
+> returns an arbitrary, non-reproducible allocation.
+>
+> As a consequence, in years when the national budget doesn't bind, countries with a
+> budget report their **maximum** emissions, not a neutral allocation: they leave all
+> credits they don't need to the other countries.
 
 ### 3.4 Imports (D10)
 
@@ -296,19 +298,20 @@ all countries together equal G_f.
 
 **Implementation sketch.**
 
-- Compose (`mods/network/carbon_accounting.py`): `fair_share_keys(n)` computes `w` from the loads
+- Compose (`mods/carbon_accounting/network.py`): `fair_share_keys(n)` computes `w` from the loads
   and stores it in a new column `fair_share_key` of the claim links (NaN where no key applies).
   The column survives the netCDF round trip like the transformation marker. No new rule inputs.
   A budget country without fixed demand of a fuel gets key 0, so it can't claim that pool.
-- Solve (`mods/constraints/carbon_accounting.py`): for every claim link of a budget country with
+- Solve (`mods/carbon_accounting/constraints.py`): for every claim link of a budget country with
   a key, add `carbon_accounting-fair-share-{CT}-{kind}`. Guard: `fair_share.enable`.
 - Evals: `view_balance_carbon_claims` additionally shows the cap (`tolerance · w · G_f`) as a third
   group next to the claimed and EU-average credits.
 
 ### 3.7 Contribution cap (TODO, D19)
 
-!!! warning "Open"
-    Not specified or implemented yet.
+> [!WARNING]
+> **Open**
+> Not specified or implemented yet.
 
 **Problem.** Neither the consumption bound (3.3, item 1) nor the fair share (3.6) depends on the
 country's own production. A country can claim more pooled credits than it adds to the pool, up to
@@ -349,7 +352,7 @@ mods:
 - `tolerance < 1` is allowed (stricter than the fair share); `tolerance ≤ 0` raises a `ValueError`.
 
 - `enable: false` or `method: technology` → the orchestrator returns early. The network is
-  bit-identical to today. `technology` is the default in `config.at.yaml` (D6).
+  bit-identical to today. `technology` is the default in `config/config.ca.yaml` (D6).
 - An unknown `method` raises a `ValueError` (fail early).
 - `config/scenarios.carbon-accounting.yaml`: `CA_base` (technology, the reference) and
   `CA_carrier` (`mods.carbon_accounting.method: carrier`), both listed under `run.name`.
@@ -360,7 +363,7 @@ mods:
 
 ### 5.1 Modules and functions
 
-`mods/network/carbon_accounting.py` (compose phase):
+`mods/carbon_accounting/network.py` (compose phase):
 
 ```python
 def apply_carbon_accounting(n: pypsa.Network, snakemake, costs: pd.DataFrame) -> None:
@@ -407,25 +410,31 @@ copies all static columns (`n.add(c.name, c.static.index, **c.static)`).
 - Fail early: a link carrier at a CO2 or fuel bus that is in no class raises a `ValueError`.
 - EF from the cost data that `modify_prenetwork` already loaded and passes in.
 
-`mods/constraints/carbon_accounting.py` (solve phase):
+`mods/carbon_accounting/constraints.py` (solve phase):
 
 ```python
 def constraint_carbon_accounting(n, snakemake, investment_year: int) -> None:
     """Guard on enable/method; add constraints 3.3 (1) and (2) to n.model."""
 ```
 
-- Registered in `mods/__init__.py` and called in `scripts/pypsa-at/additional_functionality.py`
-  after `constraint_national_co2_budgets`.
+- Re-exported from `mods/carbon_accounting/__init__.py` and called in a fenced hook in
+  `scripts/pypsa-at/additional_functionality.py`, after the national CO2 budget.
 - Constraint names: `carbon_accounting-claim-{CT}-{fuel}`, `carbon_accounting-transfer-{X}-{Y}`.
 
-`mods/constraints/co2_budget.py`: exclude `renewable oil claim aviation` from the port loop,
-add it scaled by α (the same code path as `kerosene for aviation`). In `technology` mode the
-carrier doesn't exist, so the change is a no-op.
+`mods/carbon_accounting/budget.py`: the national CO2 budget of the carbon accounting
+(`constraint_national_co2_budgets_ca`). It replaces PyPSA-AT's
+`constraint_national_co2_budgets` (`mods/constraints/co2_budget.py`, kept identical to
+PyPSA-AT) whenever `mods.carbon_accounting.enable` is set. Differences: it excludes
+`renewable oil claim aviation` from the port loop and adds it scaled by α (the same code
+path as `kerosene for aviation`), and it reads the efficiency of aviation links at their
+`co2 atmosphere` port. In `technology` mode the claim carrier doesn't exist, so both
+budgets are equal; a drift test (`test/test_carbon_accounting/test_mods/test_budget.py`)
+fails when PyPSA-AT changes its budget.
 
-`mods/constants.py`: the carrier lists of 3.2 (`GREEN_BIO_PRODUCERS`, `GREEN_SYNTHETIC_PRODUCERS`,
+`mods/carbon_accounting/constants.py`: the carrier lists of 3.2 (`GREEN_BIO_PRODUCERS`, `GREEN_SYNTHETIC_PRODUCERS`,
 `GREEN_IMPORTS`, `CAPTURE`, `SEQUESTRATION`, `VENT`, `FUEL_TRANSPORT`) and the accounting carriers.
 
-`mods/constants.py`: also the marker column name.
+`mods/carbon_accounting/constants.py`: also the marker column name.
 
 `evals/`:
 
@@ -460,8 +469,8 @@ the total is the same as in `technology` (P5). No change is needed; a test verif
 
 ## 6. Test plan
 
-Unit tests on small synthetic networks (`test/test_mods/network/test_carbon_accounting.py`,
-`test/test_mods/constraints/test_carbon_accounting.py`):
+Unit tests on small synthetic networks (`test/test_carbon_accounting/test_mods/test_network.py`,
+`test/test_carbon_accounting/test_mods/test_constraints.py`):
 
 | # | Test | Asserts |
 |---|---|---|
@@ -523,7 +532,7 @@ Each package is one PR with tests and passes `ruff`, the unit tests and a dry ru
 | D3 | Oil/methanol attributes transfer freely (EU pool) | decided |
 | D4 | All bounds are annual | decided |
 | D5 | Full retirement of all attributes | decided |
-| D6 | Default in `config.at.yaml`: `technology` | decided |
+| D6 | Default in `config/config.ca.yaml`: `technology` | decided |
 | D7 | Claims cover all consumption of a carrier, including non-energy use | decided |
 | D8 | α also applies to kerosene claims | decided |
 | D9 | Removal credits go to the capturing country (implemented through D17) | decided |

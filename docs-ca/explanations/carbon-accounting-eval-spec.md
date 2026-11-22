@@ -1,6 +1,6 @@
 # Specification: Carbon Accounting Comparison Notebook
 
-Status: implemented in `evals/carbon_accounting.py` and `evals/notebooks/carbon_accounting.py`
+Status: implemented in `evals/carbon_accounting/accounting.py` and `evals/carbon_accounting/notebooks/carbon_accounting.py`
 (AI-assisted). Deviations found during implementation are marked *Implementation note*.
 
 ## Goal
@@ -24,12 +24,12 @@ Prerequisite (met): `CA_carrier` re-run with D17, `CA_carrier_fair` solved.
 
 ## Location and structure
 
-- Notebook: `evals/notebooks/carbon_accounting.py` (marimo).
-- **All** computation functions go into **one new module**: `evals/carbon_accounting.py`.
+- Notebook: `evals/carbon_accounting/notebooks/carbon_accounting.py` (marimo).
+- **All** computation functions go into **one new module**: `evals/carbon_accounting/accounting.py`.
   Reusing existing functions is fine (`collect_myopic_statistics`, `scale_domestic_aviation`,
   `carbon_accounting_claims`, `get_location`, colours from `evals/constants.py`).
-- Tests: `test/test_evals/test_carbon_accounting.py` (unit tests on toy networks from
-  `test/test_mods/conftest.py`).
+- Tests: `test/test_carbon_accounting/test_evals/test_accounting.py` (unit tests on toy networks from
+  `test/test_carbon_accounting/conftest.py`).
 - The notebook only does UI, caching and plotting. No business logic in the notebook.
 
 ## Notebook flow (progress steps)
@@ -101,7 +101,7 @@ Step order: total A → Δ fuel use → Δ process & waste → Δ capture credit
 
 The accounting steps of (2) mix two effects: the system runs differently, and the method books
 the same flows differently. Every scenario is also evaluated as **`CA_technology`**: its flows with
-the coefficients of the method `technology` (`evals.carbon_accounting_pathways.evaluated_bridge`;
+the coefficients of the method `technology` (`evals.carbon_accounting.pathways.evaluated_bridge`;
 the carrier transformation is inverted with `technology_emissions`). With `E_m(f)` the
 categories of flows `f` under method `m` and `E(f)` the categories as booked in the run, the
 change of every category from A to B splits into (`bridge_decomposition`):
@@ -229,14 +229,14 @@ For the selected country, values of each selected scenario and Δ vs the referen
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Location | `evals/notebooks/carbon_accounting.py` |
+| 1 | Location | `evals/carbon_accounting/notebooks/carbon_accounting.py` |
 | 2 | Physical vs accounting split | category approach above; refined iteratively |
 | 3 | Country | selector, default `AT` |
 | 4 | Horizons | waterfall: horizon selector; target cost and physical changes: all horizons |
 | 5 | Cost in the country | asset cost + trade value at boundary-bus prices, see *Cost in the country* |
-| 6 | Code layout | all functions in one new module `evals/carbon_accounting.py`, reusing existing functions |
+| 6 | Code layout | all functions in one new module `evals/carbon_accounting/accounting.py`, reusing existing functions |
 | 7 | Summary table | emissions vs budget and cost Δ (EU and CT); no prices |
-| 8 | Docs nav | neither this spec nor the notebook gets a `mkdocs.yml` nav entry |
+| 8 | Docs nav | the spec lives in the Markdown-only carbon accounting docs (`docs-ca/`, #7); the PyPSA-AT `mkdocs.yml` gets no entry |
 | 9 | Budget regime | four regimes (`slack`, `physical`, `pool-scarce`, `paper`), classified from duals and pool claims, see *Budget regime* |
 | 10 | Number of scenarios | any number ≥ 2, found in the result root; Δ always vs a selectable reference |
 

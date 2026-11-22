@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: 2023-2026 Austrian Gas Grid Management AG
+#
+# SPDX-License-Identifier: MIT
+# For license information, see the LICENSE.txt file in the project root.
+
+# Guards of the carbon accounting soft fork (#7, CLAUDE.CA.md):
+# - guard: only CA-owned paths and fenced hooks differ from PyPSA-AT
+# - upstream-merge: weekly check that main still merges PyPSA-AT without conflicts
+name: Carbon accounting fork guard
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+  schedule:
+  - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# PR code runs in pytest: read-only token, not persisted in the checkout
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_URL: https://github.com/AGGM-AG/pypsa-at.git
+
+jobs:
+  guard:
+    name: Fork guard
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Fetch PyPSA-AT
+      run: |
+        git remote add upstream "$UPSTREAM_URL"
+        git fetch --no-tags upstream main
+
+    - name: Setup Pixi
+      uses: prefix-dev/setup-pixi@v0.11.0
+      with:
+        cache: true
+        cache-write: false
+
+    - name: Check that only CA-owned paths and fenced hooks differ
+      run: |
+        pixi run pytest test/test_carbon_accounting/test_fork_guard.py
+
+  upstream-merge:
+    name: Merge check against PyPSA-AT
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: main
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Fetch PyPSA-AT
+      run: |
+        git remote add upstream "$UPSTREAM_URL"
+        git fetch --no-tags upstream main
+
+    - name: Merge upstream/main into main without touching the tree
+      run: |
+        if git merge-tree --write-tree --name-only --no-messages HEAD upstream/main > merge.txt; then
+          echo "main merges upstream/main ($(git rev-parse --short upstream/main)) without conflicts."
+        else
+          echo "::error::Merging upstream/main into main conflicts in:"
+          tail -n +2 merge.txt
+          echo "Open a chore/sync-upstream PR and resolve them (see CLAUDE.CA.md)."
+          exit 1
+        fi
