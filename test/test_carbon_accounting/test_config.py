@@ -5,6 +5,7 @@
 """Smoke tests for the reduced carbon accounting configuration."""
 
 import re
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -84,3 +85,83 @@ def test_pypsa_at_plotting_has_no_carbon_accounting_colors():
     ca_colors = tech_colors("config/plotting.ca.yaml")
     at_colors = tech_colors("config/plotting.at.yaml")
     assert not ca_colors.keys() & at_colors.keys()
+
+
+# keys in which each design-principle run differs from DP_base, see
+# docs-ca/explanations/design-principle-effects-spec.md
+DP_DIFFERENCES = {
+    "DP1_no_national_data": {
+        "mods.klien_potential_limits.technologies",
+        "mods.onwind_brownfield.enable",
+    },
+    "DP2_at10": {"mods.modify_nuts3_shapes", "clustering.administrative.AT"},
+    "DP3_no_national_policy": {
+        "solving.constraints.co2_budget_national.AT",
+        "solving.constraints.limits_volume_min.solar.AT.2030",
+        "solving.constraints.limits_volume_min.wind.AT.2030",
+        "solving.constraints.limits_volume_min.hydro.AT.2030",
+        "solving.constraints.limits_volume_min.biomass.AT.2030",
+        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2030",
+        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2040",
+        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2050",
+        "mods.net_zero_electricity.enable",
+    },
+}
+
+
+def _flatten(d: dict, prefix: str = "") -> dict:
+    """Return the leaves of a nested dict, keyed by their dotted path."""
+    flat = {}
+    for key, value in d.items():
+        path = f"{prefix}{key}"
+        if isinstance(value, dict) and value:
+            flat |= _flatten(value, f"{path}.")
+        else:
+            flat[path] = value
+    return flat
+
+
+@pytest.fixture(scope="module")
+def dp_configs(config) -> dict[str, dict]:
+    """Return the flattened, resolved config of every DP scenario."""
+    scenarios = yaml.safe_load(Path(config["run"]["scenarios"]["file"]).read_text())
+    resolved = {}
+    for name in ("DP_base", *DP_DIFFERENCES):
+        merged = deepcopy(config)
+        update_config(merged, scenarios[name])
+        merged.pop("run")
+        merged.pop("description", None)
+        resolved[name] = _flatten(merged)
+    return resolved
+
+
+def test_dp_runs_are_listed(config):
+    assert {"DP_base", *DP_DIFFERENCES} <= set(config["run"]["name"])
+
+
+@pytest.mark.parametrize("scenario", DP_DIFFERENCES)
+def test_dp_run_differs_from_base_in_one_principle(dp_configs, scenario):
+    base, run = dp_configs["DP_base"], dp_configs[scenario]
+    expected = DP_DIFFERENCES[scenario]
+    differ = {k for k in base.keys() | run.keys() if base.get(k) != run.get(k)}
+    # a key set to null drops all leaves below it
+    differ = {next((e for e in expected if k.startswith(f"{e}.")), k) for k in differ}
+    assert differ == expected
+
+
+def test_dp_base_at_nuts3(dp_configs):
+    assert dp_configs["DP_base"]["mods.modify_nuts3_shapes"] == "AT35DE5"
+    assert dp_configs["DP_base"]["clustering.administrative.AT"] == 3
+    assert dp_configs["DP_base"]["mods.carbon_accounting.method"] == "technology"
+
+
+def test_dp3_removes_at_budget_only(dp_configs):
+    dp3 = dp_configs["DP3_no_national_policy"]
+    assert dp3["solving.constraints.co2_budget_national.AT"] is None
+    assert dp3["solving.constraints.co2_budget_national.DE.2030"] is not None
+
+
+def test_onwind_brownfield_default(config):
+    toggle = config["mods"]["onwind_brownfield"]
+    assert next(iter(toggle)) == "enable"
+    assert toggle["enable"] is True

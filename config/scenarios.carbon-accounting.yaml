@@ -22,3 +22,70 @@ CA_carrier_fair:
       method: carrier
       fair_share:
         enable: true
+
+# Design-principle effect runs (manuscript Sec. 3.2.1 / 4.1), see
+# docs-ca/explanations/design-principle-effects-spec.md. Each DP run differs
+# from DP_base in one principle only; all use technology-based accounting.
+
+DP_base:
+  description: Full PyPSA-AT at AT35DE5 (AT at NUTS3), technology-based carbon accounting
+  clustering:
+    administrative:
+      AT: 3
+  mods:
+    modify_nuts3_shapes: AT35DE5
+
+DP1_no_national_data:
+  description: DP_base without country-specific data (P1) - no KLIEN potential caps, PyPSA-Eur onwind brownfield
+  clustering:
+    administrative:
+      AT: 3
+  mods:
+    modify_nuts3_shapes: AT35DE5
+    klien_potential_limits:
+      technologies: []
+    onwind_brownfield:
+      enable: false
+
+DP2_at10:
+  description: DP_base at AT10DE5 (AT at NUTS2) - coarser spatial granularity (P2)
+  clustering:
+    administrative:
+      AT: 2
+  mods:
+    modify_nuts3_shapes: AT10DE5
+
+DP3_no_national_policy:
+  description: DP_base without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity
+  clustering:
+    administrative:
+      AT: 3
+  mods:
+    modify_nuts3_shapes: AT35DE5
+    net_zero_electricity:
+      enable: false
+  solving:
+    constraints:
+      co2_budget_national:
+        # null (empty): no national CO2 budget for AT, DE unchanged
+        AT:
+      limits_volume_min:
+        solar:
+          AT:
+            2030: 0
+        wind:
+          AT:
+            2030: 0
+        hydro:
+          AT:
+            2030: 0
+        biomass:
+          AT:
+            2030: 0
+      limits_capacity_min:
+        Link:
+          H2 Electrolysis:
+            AT:
+              2030: 0
+              2040: 0
+              2050: 0

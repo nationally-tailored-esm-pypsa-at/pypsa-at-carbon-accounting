@@ -13,6 +13,7 @@ import pytest
 from mods.carbon_accounting.budget import (
     carbon_accounting_enabled,
     constraint_national_co2_budgets_ca,
+    national_budgets,
 )
 from mods.carbon_accounting.network import apply_carbon_accounting
 from mods.constraints.co2_budget import constraint_national_co2_budgets
@@ -134,3 +135,25 @@ class TestDriftAgainstPyPSAAT:
 def test_carbon_accounting_enabled(enable):
     config = {"mods": {"carbon_accounting": {"enable": enable}}}
     assert carbon_accounting_enabled(config) is enable
+
+
+class TestNullBudget:
+    """A ``null`` budget removes the country's constraint (run DP3)."""
+
+    def test_national_budgets_drops_null(self):
+        budgets = {"AT": None, "DE": {2050: 0.1}}
+        assert national_budgets(budgets) == {"DE": {2050: 0.1}}
+
+    @pytest.mark.parametrize("budgets", [None, {}])
+    def test_national_budgets_without_budgets(self, budgets):
+        assert national_budgets(budgets) == {}
+
+    def test_no_constraint_for_null_budget(self, budget_snakemake):
+        budget_snakemake.params.solving["constraints"]["co2_budget_national"] = {
+            "AT": None
+        }
+        n = _budget_network("technology")
+        n.optimize.create_model()
+        constraint_national_co2_budgets_ca(n, budget_snakemake, 2050)
+        assert BUDGET not in n.model.constraints
+        assert "co2_limit-AT" not in n.global_constraints.index

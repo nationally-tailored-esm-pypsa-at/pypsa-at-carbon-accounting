@@ -45,7 +45,7 @@ leaves them in place. The current hooks:
 | File | Hook |
 |---|---|
 | `Snakefile` | `configfile:` for `config/config.ca.yaml` and `config/plotting.ca.yaml` |
-| `mods/network/common.py` | `apply_carbon_accounting` as the last network change in `modify_prenetwork` |
+| `mods/network/common.py` | `apply_carbon_accounting` as the last network change in `modify_prenetwork`; `apply_onwind_brownfield` only when `mods.onwind_brownfield.enable` (design-principle run DP1) |
 | `scripts/pypsa-at/additional_functionality.py` | CA national budget instead of the AT one when `mods.carbon_accounting.enable`; `constraint_carbon_accounting` |
 | `evals/views/__init__.py` | registers `view_balance_carbon_claims` |
 | `evals/views/balances.py` | scales green kerosene claims with the domestic aviation share in `view_balance_carbon` |

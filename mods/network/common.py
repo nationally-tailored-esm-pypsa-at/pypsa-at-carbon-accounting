@@ -17,7 +17,7 @@ import pypsa
 from snakemake.script import Snakemake
 
 # --- START: Block Maintained by Carbon Accounting ---
-from mods.carbon_accounting import apply_carbon_accounting
+from mods.carbon_accounting import apply_carbon_accounting, onwind_brownfield_enabled
 
 # --- END: Block Maintained by Carbon Accounting ---
 from mods.demand.annual import apply_annual_demand_overrides
@@ -170,7 +170,12 @@ def modify_prenetwork(n: pypsa.Network, snakemake: Snakemake) -> None:
     check_retrofit_pairing(n)
 
     apply_pemmdb_trajectories(n, snakemake, costs)
-    apply_onwind_brownfield(n, snakemake)
+    # --- START: Block Maintained by Carbon Accounting ---
+    # switched off in the design-principle run DP1 (no national data), so the
+    # PyPSA-Eur onwind capacities stay in AT
+    if onwind_brownfield_enabled(snakemake.config):
+        apply_onwind_brownfield(n, snakemake)
+    # --- END: Block Maintained by Carbon Accounting ---
     add_existing_biogas_chp_at(n, snakemake, costs)
     override_gas_storage_capacities(n, snakemake)
     apply_klien_potential_limits(n, snakemake)

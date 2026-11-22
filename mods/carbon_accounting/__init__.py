@@ -12,8 +12,10 @@ orchestrators re-exported here, inside fenced hook blocks.
 from mods.carbon_accounting.budget import (
     carbon_accounting_enabled,
     constraint_national_co2_budgets_ca,
+    national_budgets,
 )
 from mods.carbon_accounting.constraints import constraint_carbon_accounting
+from mods.carbon_accounting.design_principles import onwind_brownfield_enabled
 from mods.carbon_accounting.network import apply_carbon_accounting
 
 __all__ = [
@@ -21,4 +23,6 @@ __all__ = [
     "carbon_accounting_enabled",
     "constraint_carbon_accounting",
     "constraint_national_co2_budgets_ca",
+    "national_budgets",
+    "onwind_brownfield_enabled",
 ]

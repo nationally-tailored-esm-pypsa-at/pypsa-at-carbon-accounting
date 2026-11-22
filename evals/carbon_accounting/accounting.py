@@ -243,6 +243,7 @@ def run_info(files: Mapping[str, Mapping[str, Path]]) -> pd.DataFrame:
             meta = read_meta(path)
             method, fair_share, tolerance, claim_cost = _method(meta)
             budgets = meta["solving"]["constraints"]["co2_budget_national"] or {}
+            budgets = [ct for ct, b in budgets.items() if b is not None]
             rows[(scenario, horizon)] = {
                 "method": method,
                 "fair_share": fair_share,

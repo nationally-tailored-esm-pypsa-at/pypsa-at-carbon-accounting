@@ -18,6 +18,12 @@ run:
   - CA_base
   - CA_carrier
   - CA_carrier_fair
+  # design-principle effect runs, see
+  # docs-ca/explanations/design-principle-effects-spec.md
+  - DP_base
+  - DP1_no_national_data
+  - DP2_at10
+  - DP3_no_national_policy
   scenarios:
     enable: true
     file: config/scenarios.carbon-accounting.yaml

@@ -56,6 +56,7 @@ HOOKED = (
 # PyPSA-AT lines that a fenced hook replaces, per hooked file (stripped). Any
 # other PyPSA-AT line that a hooked file drops or changes fails the guard.
 REPLACED = {
+    "mods/network/common.py": ("apply_onwind_brownfield(n, snakemake)",),
     "scripts/pypsa-at/additional_functionality.py": (
         "constraint_national_co2_budgets(n, snakemake, investment_year)",
     ),

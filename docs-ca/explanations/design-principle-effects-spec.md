@@ -1,6 +1,6 @@
 # Specification: Design-Principle Effect Runs (manuscript Sec. 3.2.1 / 4.1)
 
-Status: **spec agreed 2026-11-22, not implemented.** Scope: model runs only. The evaluation
+Status: **spec agreed 2026-11-22, implemented 2026-11-22 (runs pending).** Scope: model runs only. The evaluation
 (metrics, figures) is work in progress and not part of this spec.
 
 ## Goal
@@ -52,21 +52,35 @@ coarsened, it would differ from `DP_base` in two choices.
 | 1 GW electrolysis | `solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT` | `0` (non-binding) |
 | 100 % RE electricity, annual balance, from 2030 | `mods.net_zero_electricity.enable` | `false` |
 
-## Implementation items (before the first run)
+## Implementation items (done)
 
-1. **Onwind brownfield switch (P1).** `apply_onwind_brownfield` (`mods/network/onwind.py`, called
-   in `modify_prenetwork`) has no `enable` toggle. Needed: a toggle that skips it, so the
-   PyPSA-Eur onwind capacities stay. The file is AT-owned: either a small PyPSA-AT PR (toggle under
-   `mods`, `enable: true` default, per the feature-toggle rule) or a CA hook. Recommendation:
-   PyPSA-AT PR, since the toggle is generic.
-2. **Removing the AT CO2 budget (P3).** `constraint_national_co2_budgets_ca`
-   (`mods/carbon_accounting/budget.py`) loops over all countries in `co2_budget_national` and
-   indexes `budget[investment_year]`; deep merge cannot delete the `AT` key. Needed: skip a country
-   whose budget is `null` (CA-owned change; check the drift test against PyPSA-AT). Confirm that the
-   PyPSA-AT budget (`mods/constraints/co2_budget.py`) is not added in parallel.
-3. **Zero limits.** Check that `0` in `limits_volume_min` / `limits_capacity_min` adds no
-   constraint or only a non-binding one (no infeasibility, no errors in `additional_functionality.py`).
-4. Dry run: `pixi run snakemake -n --configfile config/config.carbon-accounting.yaml`.
+1. **Onwind brownfield switch (P1).** Decided: CA hook only, no PyPSA-AT PR. The switch
+   `mods.onwind_brownfield.enable` (default `true`, in `config/config.ca.yaml`) is read by
+   `onwind_brownfield_enabled` (`mods/carbon_accounting/design_principles.py`); a fenced hook in
+   `modify_prenetwork` (`mods/network/common.py`) calls `apply_onwind_brownfield` only when it is
+   on. The brownfield CSV is still built, so the DAG is the same in all runs.
+2. **Removing the AT CO2 budget (P3).** `national_budgets` (`mods/carbon_accounting/budget.py`)
+   drops countries whose budget is `null`; the CA budget, the claim pricing and the fair share use
+   it. The PyPSA-AT budget is not added in parallel: `additional_functionality.py` calls either the
+   CA or the AT budget. The drift test against PyPSA-AT is unchanged.
+3. **Zero limits.** Non-binding: `limits_volume_min: 0` adds `production >= 0` (production
+   variables are non-negative), `limits_capacity_min: 0` adds `p_nom >= -existing`.
+4. **Dry run** with `--configfile config/config.carbon-accounting.yaml` resolves 28 compose and 28
+   solve jobs (7 scenarios × 4 horizons). `test/test_carbon_accounting/test_config.py` checks that
+   each DP run differs from `DP_base` only in the keys of the run table.
+
+## Local test run (2026-11-22)
+
+The four DP runs went through the whole workflow locally at monthly resolution
+(`clustering.temporal.averaging: 730h`) with HiGHS, all horizons solved. In the solved networks:
+35 AT buses (10 in `DP2_at10`); `DP1` has the PyPSA-Eur potentials and onwind brownfield in AT;
+`DP3` has no `co2_limit-AT`, no net-zero-electricity/green-gas/green-H2 constraints, and the zero
+EAG and electrolysis limits have zero duals. Caveats for the production runs:
+
+- HiGHS (IPX, no crossover) reports every solve as "Unknown" after unscaling (tolerance violation
+  1e3–1e4); the DP runs need Gurobi, as in the overlay.
+- `pixi.lock` pins gurobi 14.0.0; a Gurobi 13 license does not work with it.
+- Each AT35 scenario needs about 8–10 GB of resources (`shared_resources.policy: false`).
 
 ## Execution
 
