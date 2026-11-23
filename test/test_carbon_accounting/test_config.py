@@ -12,6 +12,7 @@ import pytest
 import yaml
 from snakemake.utils import update_config
 
+from evals.carbon_accounting.design_principles import DP_DIFFERENCES, flatten
 from mods.clustering.constants import VALID_CONFIGURATIONS
 from scripts.lib.validation.config import validate_config
 
@@ -101,40 +102,6 @@ def test_pypsa_at_plotting_has_no_carbon_accounting_colors():
     assert not ca_colors.keys() & at_colors.keys()
 
 
-# keys in which each design-principle run differs from DP_base, see
-# docs-ca/explanations/design-principle-effects-spec.md
-DP_DIFFERENCES = {
-    "DP1_no_national_data": {
-        "mods.klien_potential_limits.technologies",
-        "mods.carbon_accounting.onwind_brownfield.enable",
-    },
-    "DP2_at10": {"mods.modify_nuts3_shapes", "clustering.administrative.AT"},
-    "DP3_no_national_policy": {
-        "solving.constraints.co2_budget_national.AT",
-        "solving.constraints.limits_volume_min.solar.AT.2030",
-        "solving.constraints.limits_volume_min.wind.AT.2030",
-        "solving.constraints.limits_volume_min.hydro.AT.2030",
-        "solving.constraints.limits_volume_min.biomass.AT.2030",
-        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2030",
-        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2040",
-        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2050",
-        "mods.net_zero_electricity.enable",
-    },
-}
-
-
-def _flatten(d: dict, prefix: str = "") -> dict:
-    """Return the leaves of a nested dict, keyed by their dotted path."""
-    flat = {}
-    for key, value in d.items():
-        path = f"{prefix}{key}"
-        if isinstance(value, dict) and value:
-            flat |= _flatten(value, f"{path}.")
-        else:
-            flat[path] = value
-    return flat
-
-
 @pytest.fixture(scope="module")
 def dp_configs(dp_config) -> dict[str, dict]:
     """Return the flattened, resolved config of every DP scenario."""
@@ -145,7 +112,7 @@ def dp_configs(dp_config) -> dict[str, dict]:
         update_config(merged, scenarios[name])
         merged.pop("run")
         merged.pop("description", None)
-        resolved[name] = _flatten(merged)
+        resolved[name] = flatten(merged)
     return resolved
 
 
