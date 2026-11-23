@@ -13,7 +13,7 @@ principles. Validation is cross-cutting and **not** part of these runs.
 |---|---|---|
 | P1 | Integration of country-specific data | KLIEN renewable potentials and KLIEN existing onshore-wind capacities for AT |
 | P2 | Adequate spatial (and temporal) granularity | AT at NUTS 3 (AT35) vs NUTS 2 (AT10) |
-| P3 | Country-centred policy representation and international embedding | national AT policy targets **and** the international embedding and national settings (TYNDP grid, gas import routes, gas storage, gas grid, capacity trajectories) |
+| P3 | Country-centred policy representation and international embedding | national AT policy targets **and** the international embedding and national settings (TYNDP grid, gas import routes, gas storage, capacity trajectories) |
 
 Design rule (Sec. 3.2): **each comparison differs in one choice only.** Every principle gets a
 pair: `DP_base` (full PyPSA-AT) vs a run without the principle.
@@ -69,7 +69,7 @@ The target and the embedding effects are therefore not separated.
 | TYNDP NTC floors (transmission expansion lower bounds) and TYNDP NTC flow limits | `mods.tyndp_lower_bounds.years` (+ `enable`), `mods.tyndp_cross_border_flow_limits.enable` | `years: []`, both `enable: false` |
 | Russian gas import block (eastern border, TurkStream) | `mods.block_russian_gas_imports.enable` | `false` |
 | Fixed gas storage capacities | `mods.override_gas_storage_capacities.enable` | `false` |
-| Frozen AT gas grid up to 2040 | `mods.threshold_year_for_gas_grid_expansion` | `2024` (before the first horizon: no horizon frozen) |
+| Frozen AT gas grid up to 2040 | `mods.threshold_year_for_gas_grid_expansion` | **kept** (`2040`) |
 | Capacity trajectories | `mods.trajectories.apply_trajectories` | `false` |
 | TYNDP H2 import scenario | `mods.tyndp_h2_import_scenario` | **kept** (`DE`) |
 
@@ -82,10 +82,12 @@ Notes on the switches:
   the run also stays correct once PyPSA-AT reads the flag. Both act on all European corridors, not
   only on AT ones.
 - **Russian gas block** acts on the EU gas import routes, not only on AT.
-- **Gas grid freeze.** The AGGM brownfield gas network (`mods.modify_brownfield_gas_network_AT`,
-  P1 data) stays. After the threshold year PyPSA-AT also skips restoring the reverse legs of
-  one-way and asymmetric AT pipelines (known limitation in `mods/network/gas.py`), so in DP3 these
-  corridors get their full reverse capacity from 2025 on.
+- **Gas grid freeze kept.** Decided 2026-11-23 after the local test run: DP3 leaves the gas
+  network as in `DP_base`. With the threshold before the first horizon (`2024`), compose 2030
+  failed: after the threshold year `fix_gas_grid_capacity` (`mods/network/gas.py`) also skips
+  fixing the gas pipelines without an H2 retrofit candidate (DE corridors frozen by the Kernnetz
+  logic), and `check_retrofit_pairing` stops the run. It would also skip restoring the reverse legs
+  of one-way and asymmetric AT pipelines (known limitation). See *Open*.
 - **Capacity trajectories** (`resources/trajectories.csv`) hold the TYNDP hydro capacities of all
   countries and the KLIEN run-of-river corridor of AT. Switching them off also drops this KLIEN
   corridor, a P1 data source (see *Open*, P1 scope). The PEMMDB trajectories
@@ -111,7 +113,8 @@ Notes on the switches:
    16 solve jobs (4 scenarios × 4 horizons). `test/test_carbon_accounting/test_config.py` checks
    that each DP run differs from `DP_base` only in the keys of the run table.
 5. **Widened DP3 (2026-11-23).** Scenario keys of the embedding table added; the config test lists
-   them and checks that no horizon freezes the gas grid and that the H2 import scenario is kept.
+   them and checks that the H2 import scenario is kept. The gas grid freeze was switched off at
+   first (threshold `2024`) and reverted after the test run on 2026-11-23 (see the notes above).
    The local test run below predates this change.
 
 ## Local test run (2026-11-22)
@@ -133,8 +136,7 @@ EAG and electrolysis limits have zero duals. Caveats for the production runs:
 - Sanity checks in `evals/` (understanding only): solved to optimality for all horizons; 35 AT buses
   in all runs but `DP2_at10`; no KLIEN caps and PyPSA-Eur onwind brownfield in AT in `DP1`; no AT
   CO2 budget, no EAG/electrolysis/net-zero-electricity constraints, no `tyndp_ntc_flow_*`
-  constraints, no Russian gas block, no generic trajectory constraints and AT gas pipelines
-  not fixed in 2025–2040 in `DP3`.
+  constraints, no Russian gas block and no generic trajectory constraints in `DP3`.
 - Acceptance: each pair differs only in the keys listed above (diff of the resolved configs in
   `results/design-principles/<scenario>/configs/`).
 
@@ -144,6 +146,9 @@ EAG and electrolysis limits have zero duals. Caveats for the production runs:
   KLIEN ror corridor). Switch them off as well?
 - **P3, separating targets and embedding:** `DP3` removes both at once. A later split into a
   targets-only and an embedding-only run would show which part drives the P3 effect.
+- **P3, gas grid freeze not switchable:** a threshold year before a horizon breaks the retrofit
+  pairing (see the DP3 notes). Report to PyPSA-AT: fix the gas pipelines without a retrofit
+  candidate regardless of the threshold year. Until then the freeze is not part of `DP3`.
 - **P3, `tyndp_cross_border_flow_limits.enable` not read:** report to PyPSA-AT (the docstring of
   `constraint_ntc_flow_limits` says the caller guards on it; the caller does not).
 - **Results location:** where cluster results are stored and how they reach the evaluation

@@ -117,7 +117,6 @@ P3_KEYS = {
     "mods.tyndp_lower_bounds.years",
     "mods.block_russian_gas_imports.enable",
     "mods.override_gas_storage_capacities.enable",
-    "mods.threshold_year_for_gas_grid_expansion",
     "mods.trajectories.apply_trajectories",
 }
 KLIEN_CAPS = "mods.klien_potential_limits.technologies"
@@ -196,13 +195,6 @@ def test_dp3_removes_at_budget_only(dp_configs):
     dp3 = dp_configs["DP3_no_national_policy"]
     assert dp3["solving.constraints.co2_budget_national.AT"] is None
     assert dp3["solving.constraints.co2_budget_national.DE.2030"] is not None
-
-
-def test_dp3_freezes_no_gas_grid_horizon(dp_configs):
-    threshold = dp_configs["DP3_no_national_policy"][
-        "mods.threshold_year_for_gas_grid_expansion"
-    ]
-    assert threshold < min(dp_configs["DP_base"]["planning_horizons"])
 
 
 def test_dp3_keeps_h2_import_scenario(dp_configs):
