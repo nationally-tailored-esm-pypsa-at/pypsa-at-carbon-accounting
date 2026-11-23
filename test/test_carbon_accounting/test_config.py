@@ -101,32 +101,38 @@ def test_pypsa_at_plotting_has_no_carbon_accounting_colors():
     assert not ca_colors.keys() & at_colors.keys()
 
 
+# keys switched off for P3 (DP3 and the DP3a pair)
+P3_KEYS = {
+    "solving.constraints.co2_budget_national.AT",
+    "solving.constraints.limits_volume_min.solar.AT.2030",
+    "solving.constraints.limits_volume_min.wind.AT.2030",
+    "solving.constraints.limits_volume_min.hydro.AT.2030",
+    "solving.constraints.limits_volume_min.biomass.AT.2030",
+    "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2030",
+    "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2040",
+    "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2050",
+    "mods.net_zero_electricity.enable",
+    "mods.tyndp_cross_border_flow_limits.enable",
+    "mods.tyndp_lower_bounds.enable",
+    "mods.tyndp_lower_bounds.years",
+    "mods.block_russian_gas_imports.enable",
+    "mods.override_gas_storage_capacities.enable",
+    "mods.threshold_year_for_gas_grid_expansion",
+    "mods.trajectories.apply_trajectories",
+}
+KLIEN_CAPS = "mods.klien_potential_limits.technologies"
+
 # keys in which each design-principle run differs from DP_base, see
 # docs-ca/explanations/design-principle-effects-spec.md
 DP_DIFFERENCES = {
     "DP1_no_national_data": {
-        "mods.klien_potential_limits.technologies",
+        KLIEN_CAPS,
         "mods.carbon_accounting.onwind_brownfield.enable",
     },
     "DP2_at10": {"mods.modify_nuts3_shapes", "clustering.administrative.AT"},
-    "DP3_no_national_policy": {
-        "solving.constraints.co2_budget_national.AT",
-        "solving.constraints.limits_volume_min.solar.AT.2030",
-        "solving.constraints.limits_volume_min.wind.AT.2030",
-        "solving.constraints.limits_volume_min.hydro.AT.2030",
-        "solving.constraints.limits_volume_min.biomass.AT.2030",
-        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2030",
-        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2040",
-        "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2050",
-        "mods.net_zero_electricity.enable",
-        "mods.tyndp_cross_border_flow_limits.enable",
-        "mods.tyndp_lower_bounds.enable",
-        "mods.tyndp_lower_bounds.years",
-        "mods.block_russian_gas_imports.enable",
-        "mods.override_gas_storage_capacities.enable",
-        "mods.threshold_year_for_gas_grid_expansion",
-        "mods.trajectories.apply_trajectories",
-    },
+    "DP3_no_national_policy": P3_KEYS,
+    "DP3a_with_national_policy_no_klien": {KLIEN_CAPS},
+    "DP3a_no_national_policy_no_klien": {KLIEN_CAPS} | P3_KEYS,
 }
 
 
@@ -164,10 +170,20 @@ def test_dp_runs_are_listed(dp_config):
 def test_dp_run_differs_from_base_in_one_principle(dp_configs, scenario):
     base, run = dp_configs["DP_base"], dp_configs[scenario]
     expected = DP_DIFFERENCES[scenario]
-    differ = {k for k in base.keys() | run.keys() if base.get(k) != run.get(k)}
+    assert _differing(base, run, expected) == expected
+
+
+def _differing(a: dict, b: dict, expected: set) -> set:
+    differ = {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)}
     # a key set to null drops all leaves below it
-    differ = {next((e for e in expected if k.startswith(f"{e}.")), k) for k in differ}
-    assert differ == expected
+    return {next((e for e in expected if k.startswith(f"{e}.")), k) for k in differ}
+
+
+def test_dp3a_pair_differs_in_p3_only(dp_configs):
+    """The DP3a pair switches P3 the same way as DP3, without the KLIEN caps."""
+    with_policy = dp_configs["DP3a_with_national_policy_no_klien"]
+    no_policy = dp_configs["DP3a_no_national_policy_no_klien"]
+    assert _differing(with_policy, no_policy, P3_KEYS) == P3_KEYS
 
 
 def test_dp_base_at_nuts3(dp_configs):

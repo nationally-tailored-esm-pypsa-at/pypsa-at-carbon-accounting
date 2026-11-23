@@ -79,12 +79,26 @@ DP3a_with_national_policy_no_klien:
     klien_potential_limits:
       technologies: []
 
-
 DP3a_no_national_policy_no_klien:
   description: DP3_no_national_policy without KLIEN potential caps - tests whether the KLIEN caps mask the policy effect (P3); onwind brownfield unchanged
   mods:
     klien_potential_limits:
       technologies: []
+    # same P3 switches as DP3_no_national_policy
+    net_zero_electricity:
+      enable: false
+    tyndp_cross_border_flow_limits:
+      enable: false
+    tyndp_lower_bounds:
+      enable: false
+      years: []
+    block_russian_gas_imports:
+      enable: false
+    override_gas_storage_capacities:
+      enable: false
+    threshold_year_for_gas_grid_expansion: 2024
+    trajectories:
+      apply_trajectories: false
   solving:
     constraints:
       co2_budget_national:
