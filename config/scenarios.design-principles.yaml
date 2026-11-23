@@ -57,3 +57,41 @@ DP3_no_national_policy:
               2030: 0
               2040: 0
               2050: 0
+
+DP3a_with_national_policy_no_klien:
+  description: DP3_with_national_policy without KLIEN potential caps - acts as a basis for comparison with DP3a_no_national_policy_no_klien (P3); onwind brownfield unchanged
+  mods:
+    klien_potential_limits:
+      technologies: []
+
+
+DP3a_no_national_policy_no_klien:
+  description: DP3_no_national_policy without KLIEN potential caps - tests whether the KLIEN caps mask the policy effect (P3); onwind brownfield unchanged
+  mods:
+    klien_potential_limits:
+      technologies: []
+  solving:
+    constraints:
+      co2_budget_national:
+        # null (empty): no national CO2 budget for AT, DE unchanged
+        AT:
+      limits_volume_min:
+        solar:
+          AT:
+            2030: 0
+        wind:
+          AT:
+            2030: 0
+        hydro:
+          AT:
+            2030: 0
+        biomass:
+          AT:
+            2030: 0
+      limits_capacity_min:
+        Link:
+          H2 Electrolysis:
+            AT:
+              2030: 0
+              2040: 0
+              2050: 0
