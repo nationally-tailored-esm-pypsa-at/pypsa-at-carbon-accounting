@@ -119,6 +119,13 @@ DP_DIFFERENCES = {
         "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2040",
         "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2050",
         "mods.net_zero_electricity.enable",
+        "mods.tyndp_cross_border_flow_limits.enable",
+        "mods.tyndp_lower_bounds.enable",
+        "mods.tyndp_lower_bounds.years",
+        "mods.block_russian_gas_imports.enable",
+        "mods.override_gas_storage_capacities.enable",
+        "mods.threshold_year_for_gas_grid_expansion",
+        "mods.trajectories.apply_trajectories",
     },
 }
 
@@ -173,6 +180,19 @@ def test_dp3_removes_at_budget_only(dp_configs):
     dp3 = dp_configs["DP3_no_national_policy"]
     assert dp3["solving.constraints.co2_budget_national.AT"] is None
     assert dp3["solving.constraints.co2_budget_national.DE.2030"] is not None
+
+
+def test_dp3_freezes_no_gas_grid_horizon(dp_configs):
+    threshold = dp_configs["DP3_no_national_policy"][
+        "mods.threshold_year_for_gas_grid_expansion"
+    ]
+    assert threshold < min(dp_configs["DP_base"]["planning_horizons"])
+
+
+def test_dp3_keeps_h2_import_scenario(dp_configs):
+    """No neutral TYNDP H2 import scenario exists, so DP3 keeps the default."""
+    key = "mods.tyndp_h2_import_scenario"
+    assert dp_configs["DP3_no_national_policy"][key] == dp_configs["DP_base"][key]
 
 
 def test_onwind_brownfield_default(config):

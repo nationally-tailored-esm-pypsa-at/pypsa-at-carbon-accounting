@@ -28,10 +28,25 @@ DP2_at10:
     modify_nuts3_shapes: AT10DE5
 
 DP3_no_national_policy:
-  description: DP_base without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity
+  description: DP_base without country-centred policy and international embedding (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity, TYNDP NTC floors and flow limits, Russian gas block, gas storage override, gas grid freeze, capacity trajectories
   mods:
     net_zero_electricity:
       enable: false
+    # years switches both the NTC floors and the NTC flow limits; the enable
+    # flags only gate the DAG input (the flow-limit flag is not read at all)
+    tyndp_cross_border_flow_limits:
+      enable: false
+    tyndp_lower_bounds:
+      enable: false
+      years: []
+    block_russian_gas_imports:
+      enable: false
+    override_gas_storage_capacities:
+      enable: false
+    # before the first horizon: no horizon freezes the AT gas grid
+    threshold_year_for_gas_grid_expansion: 2024
+    trajectories:
+      apply_trajectories: false
   solving:
     constraints:
       co2_budget_national:

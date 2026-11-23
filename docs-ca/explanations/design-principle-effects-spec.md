@@ -1,6 +1,6 @@
 # Specification: Design-Principle Effect Runs (manuscript Sec. 3.2.1 / 4.1)
 
-Status: **spec agreed 2026-11-22, implemented 2026-11-22, own overlay 2026-11-23 (runs pending).** Scope: model runs only. The evaluation
+Status: **spec agreed 2026-11-22, implemented 2026-11-22, own overlay 2026-11-23, DP3 widened to all of P3 2026-11-23 (runs pending).** Scope: model runs only. The evaluation
 (metrics, figures) is work in progress and not part of this spec.
 
 ## Goal
@@ -13,7 +13,7 @@ principles. Validation is cross-cutting and **not** part of these runs.
 |---|---|---|
 | P1 | Integration of country-specific data | KLIEN renewable potentials and KLIEN existing onshore-wind capacities for AT |
 | P2 | Adequate spatial (and temporal) granularity | AT at NUTS 3 (AT35) vs NUTS 2 (AT10) |
-| P3 | Country-centred policy representation and international embedding | all national AT policy constraints |
+| P3 | Country-centred policy representation and international embedding | national AT policy targets **and** the international embedding and national settings (TYNDP grid, gas import routes, gas storage, gas grid, capacity trajectories) |
 
 Design rule (Sec. 3.2): **each comparison differs in one choice only.** Every principle gets a
 pair: `DP_base` (full PyPSA-AT) vs a run without the principle.
@@ -39,13 +39,21 @@ pair: `DP_base` (full PyPSA-AT) vs a run without the principle.
 | `DP_base` | – | – (PyPSA-AT defaults, AT35DE5, Gurobi, technology-based accounting) |
 | `DP1_no_national_data` | P1 | KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`, PyPSA-Eur/ERA5 potentials apply) **and** KLIEN onwind brownfield off (`mods.carbon_accounting.onwind_brownfield.enable: false`, PyPSA-Eur existing onwind capacities apply) |
 | `DP2_at10` | P2 | `mods.modify_nuts3_shapes: AT10DE5`, `clustering.administrative.AT: 2` |
-| `DP3_no_national_policy` | P3 | all national AT policy constraints removed (table below) |
+| `DP3_no_national_policy` | P3 | national policy targets, international embedding and national settings removed (tables below) |
 
 `CA_base` (AT10) is not reused as a DP run: if the temporal resolution of the DP runs is
 coarsened, it would differ from `DP_base` in two choices. The DP runs have their own overlay,
 so changes to the reduced carbon accounting setup never reach them.
 
-### DP3: national AT policies removed
+### DP3: country-centred policy and international embedding removed
+
+Review 2026-11-23: a DP3 with the national targets only tests "national targets", not
+"country-centred policy and international embedding". Sec. 2.2 also puts national technology
+trajectories and physically plausible import/export under P3, and Sec. 3.1.2 the fixed gas
+storage and the TYNDP flows. Decided: `DP3_no_national_policy` removes all of P3 in one run.
+The target and the embedding effects are therefore not separated.
+
+#### National policy targets
 
 | Policy | Config key | In `DP3_no_national_policy` |
 |---|---|---|
@@ -53,6 +61,38 @@ so changes to the reduced carbon accounting setup never reach them.
 | EAG +27 TWh RE by 2030 | `solving.constraints.limits_volume_min.{solar,wind,hydro,biomass}.AT` | `0` (non-binding) |
 | 1 GW electrolysis | `solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT` | `0` (non-binding) |
 | 100 % RE electricity, annual balance, from 2030 | `mods.net_zero_electricity.enable` | `false` |
+
+#### International embedding and national settings
+
+| Setting | Config key | In `DP3_no_national_policy` |
+|---|---|---|
+| TYNDP NTC floors (transmission expansion lower bounds) and TYNDP NTC flow limits | `mods.tyndp_lower_bounds.years` (+ `enable`), `mods.tyndp_cross_border_flow_limits.enable` | `years: []`, both `enable: false` |
+| Russian gas import block (eastern border, TurkStream) | `mods.block_russian_gas_imports.enable` | `false` |
+| Fixed gas storage capacities | `mods.override_gas_storage_capacities.enable` | `false` |
+| Frozen AT gas grid up to 2040 | `mods.threshold_year_for_gas_grid_expansion` | `2024` (before the first horizon: no horizon frozen) |
+| Capacity trajectories | `mods.trajectories.apply_trajectories` | `false` |
+| TYNDP H2 import scenario | `mods.tyndp_h2_import_scenario` | **kept** (`DE`) |
+
+Notes on the switches:
+
+- **NTC floors and flow limits.** Both are switched by the horizons in
+  `mods.tyndp_lower_bounds.years` only (`mods/network/electricity.py`, `mods/constraints/tyndp.py`).
+  `tyndp_lower_bounds.enable` only gates the compose input, and
+  `tyndp_cross_border_flow_limits.enable` is not read anywhere in PyPSA-AT. DP3 sets all three, so
+  the run also stays correct once PyPSA-AT reads the flag. Both act on all European corridors, not
+  only on AT ones.
+- **Russian gas block** acts on the EU gas import routes, not only on AT.
+- **Gas grid freeze.** The AGGM brownfield gas network (`mods.modify_brownfield_gas_network_AT`,
+  P1 data) stays. After the threshold year PyPSA-AT also skips restoring the reverse legs of
+  one-way and asymmetric AT pipelines (known limitation in `mods/network/gas.py`), so in DP3 these
+  corridors get their full reverse capacity from 2025 on.
+- **Capacity trajectories** (`resources/trajectories.csv`) hold the TYNDP hydro capacities of all
+  countries and the KLIEN run-of-river corridor of AT. Switching them off also drops this KLIEN
+  corridor, a P1 data source (see *Open*, P1 scope). The PEMMDB trajectories
+  (`mods.PEMMDB_trajectories`, other countries, AT and DE skipped) stay.
+- **H2 import scenario.** There is no neutral value: `DE`, `NT` and `GA` are all TYNDP scenario
+  assumptions, and switching the TYNDP H2 imports off would be a restriction of its own. DP3 keeps
+  `DE`; a test checks this.
 
 ## Implementation items (done)
 
@@ -70,6 +110,9 @@ so changes to the reduced carbon accounting setup never reach them.
 4. **Dry run** with `--configfile config/config.design-principles.yaml` resolves 16 compose and
    16 solve jobs (4 scenarios × 4 horizons). `test/test_carbon_accounting/test_config.py` checks
    that each DP run differs from `DP_base` only in the keys of the run table.
+5. **Widened DP3 (2026-11-23).** Scenario keys of the embedding table added; the config test lists
+   them and checks that no horizon freezes the gas grid and that the H2 import scenario is kept.
+   The local test run below predates this change.
 
 ## Local test run (2026-11-22)
 
@@ -89,7 +132,9 @@ EAG and electrolysis limits have zero duals. Caveats for the production runs:
 - Solve on the cluster; no full local runs.
 - Sanity checks in `evals/` (understanding only): solved to optimality for all horizons; 35 AT buses
   in all runs but `DP2_at10`; no KLIEN caps and PyPSA-Eur onwind brownfield in AT in `DP1`; no AT
-  CO2 budget and no EAG/electrolysis/net-zero-electricity constraints in `DP3`.
+  CO2 budget, no EAG/electrolysis/net-zero-electricity constraints, no `tyndp_ntc_flow_*`
+  constraints, no Russian gas block, no generic trajectory constraints and AT gas pipelines
+  not fixed in 2025–2040 in `DP3`.
 - Acceptance: each pair differs only in the keys listed above (diff of the resolved configs in
   `results/design-principles/<scenario>/configs/`).
 
@@ -97,13 +142,10 @@ EAG and electrolysis limits have zero duals. Caveats for the production runs:
 
 - **P1 scope:** other KLIEN uses stay active in `DP1` (hydro inflow targets, `klien_residual_plants`,
   KLIEN ror corridor). Switch them off as well?
-- **P3, international embedding:** belongs to P3, but kept unchanged in `DP3` for now:
-  `mods.tyndp_cross_border_flow_limits`, `mods.tyndp_lower_bounds` (NTC floors),
-  `mods.block_russian_gas_imports`, `mods.tyndp_h2_import_scenario`.
-- **P3, further national settings** kept unchanged for now: `mods.override_gas_storage_capacities`
-  (fixed gas storage, policy?), `mods.threshold_year_for_gas_grid_expansion` (frozen gas grid),
-  national capacity trajectories (`mods.trajectories`; Sec. 2.2 lists "national technology
-  trajectories" under P3).
+- **P3, separating targets and embedding:** `DP3` removes both at once. A later split into a
+  targets-only and an embedding-only run would show which part drives the P3 effect.
+- **P3, `tyndp_cross_border_flow_limits.enable` not read:** report to PyPSA-AT (the docstring of
+  `constraint_ntc_flow_limits` says the caller guards on it; the caller does not).
 - **Results location:** where cluster results are stored and how they reach the evaluation
   notebooks (see `CLAUDE.local.md`).
 - **Evaluation:** metrics and figures per principle (work in progress, later spec).
