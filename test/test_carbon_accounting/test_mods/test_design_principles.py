@@ -15,7 +15,7 @@ from mods.carbon_accounting import onwind_brownfield_enabled
 
 @pytest.mark.parametrize("enable", [True, False])
 def test_onwind_brownfield_enabled(enable):
-    config = {"mods": {"onwind_brownfield": {"enable": enable}}}
+    config = {"mods": {"carbon_accounting": {"onwind_brownfield": {"enable": enable}}}}
     assert onwind_brownfield_enabled(config) is enable
 
 
@@ -34,7 +34,9 @@ def test_modify_prenetwork_skips_onwind_brownfield(monkeypatch, enable):
     monkeypatch.setattr(common, "apply_onwind_brownfield", lambda *a: calls.append(a))
     monkeypatch.setattr("scripts._helpers.load_costs", lambda *a, **k: None)
     snakemake = SimpleNamespace(
-        config={"mods": {"onwind_brownfield": {"enable": enable}}},
+        config={
+            "mods": {"carbon_accounting": {"onwind_brownfield": {"enable": enable}}}
+        },
         input=SimpleNamespace(tech_costs=None),
         wildcards=SimpleNamespace(horizon="2030"),
     )

@@ -1,6 +1,6 @@
 # Specification: Design-Principle Effect Runs (manuscript Sec. 3.2.1 / 4.1)
 
-Status: **spec agreed 2026-11-22, implemented 2026-11-22 (runs pending).** Scope: model runs only. The evaluation
+Status: **spec agreed 2026-11-22, implemented 2026-11-22, own overlay 2026-11-23 (runs pending).** Scope: model runs only. The evaluation
 (metrics, figures) is work in progress and not part of this spec.
 
 ## Goal
@@ -20,28 +20,30 @@ pair: `DP_base` (full PyPSA-AT) vs a run without the principle.
 
 ## Common setup
 
-- Overlay: `config/config.carbon-accounting.yaml` (reduced PyPSA-AT, Gurobi), technology-based
+- Overlay: `config/config.design-principles.yaml` (full PyPSA-AT, Gurobi), separate from the
+  reduced carbon accounting overlay `config/config.carbon-accounting.yaml`. Technology-based
   carbon accounting in all DP runs, so the DP results are independent of RQ3.
-- Spatial resolution: **AT35DE5** for all DP runs except `DP2_at10`. The 30-min solve target of
-  the overlay does not apply to DP runs.
+- Spatial resolution: **AT35DE5** (the PyPSA-AT default) for all DP runs except `DP2_at10`.
 - Planning horizons: 2025, 2030, 2040, 2050 (from `config/config.at.yaml`).
 - Temporal resolution: inherited (`clustering.temporal`). If AT35 does not solve in acceptable
-  time, coarsen it **for all DP runs alike** (never for one run of a pair only).
-- Scenarios go into `config/scenarios.carbon-accounting.yaml` and `run.name` of
-  `config/config.carbon-accounting.yaml`; results land in `results/carbon-accounting/<scenario>/`.
+  time, coarsen it **for all DP runs alike** in `config/config.design-principles.yaml` (never
+  for one run of a pair only).
+- Scenarios go into `config/scenarios.design-principles.yaml` and `run.name` of
+  `config/config.design-principles.yaml`; results land in `results/design-principles/<scenario>/`.
 - Scenario `mods` are deep-merged (`update_config`): keys can be overwritten, not deleted.
 
 ## Runs
 
 | Scenario | Principle | Differs from `DP_base` by |
 |---|---|---|
-| `DP_base` | – | `CA_base` + `mods.modify_nuts3_shapes: AT35DE5`, `clustering.administrative.AT: 3` |
-| `DP1_no_national_data` | P1 | KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`, PyPSA-Eur/ERA5 potentials apply) **and** KLIEN onwind brownfield off (PyPSA-Eur existing onwind capacities apply) |
+| `DP_base` | – | – (PyPSA-AT defaults, AT35DE5, Gurobi, technology-based accounting) |
+| `DP1_no_national_data` | P1 | KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`, PyPSA-Eur/ERA5 potentials apply) **and** KLIEN onwind brownfield off (`mods.carbon_accounting.onwind_brownfield.enable: false`, PyPSA-Eur existing onwind capacities apply) |
 | `DP2_at10` | P2 | `mods.modify_nuts3_shapes: AT10DE5`, `clustering.administrative.AT: 2` |
 | `DP3_no_national_policy` | P3 | all national AT policy constraints removed (table below) |
 
 `CA_base` (AT10) is not reused as a DP run: if the temporal resolution of the DP runs is
-coarsened, it would differ from `DP_base` in two choices.
+coarsened, it would differ from `DP_base` in two choices. The DP runs have their own overlay,
+so changes to the reduced carbon accounting setup never reach them.
 
 ### DP3: national AT policies removed
 
@@ -55,7 +57,7 @@ coarsened, it would differ from `DP_base` in two choices.
 ## Implementation items (done)
 
 1. **Onwind brownfield switch (P1).** Decided: CA hook only, no PyPSA-AT PR. The switch
-   `mods.onwind_brownfield.enable` (default `true`, in `config/config.ca.yaml`) is read by
+   `mods.carbon_accounting.onwind_brownfield.enable` (default `true`, in `config/config.ca.yaml`) is read by
    `onwind_brownfield_enabled` (`mods/carbon_accounting/design_principles.py`); a fenced hook in
    `modify_prenetwork` (`mods/network/common.py`) calls `apply_onwind_brownfield` only when it is
    on. The brownfield CSV is still built, so the DAG is the same in all runs.
@@ -65,9 +67,9 @@ coarsened, it would differ from `DP_base` in two choices.
    CA or the AT budget. The drift test against PyPSA-AT is unchanged.
 3. **Zero limits.** Non-binding: `limits_volume_min: 0` adds `production >= 0` (production
    variables are non-negative), `limits_capacity_min: 0` adds `p_nom >= -existing`.
-4. **Dry run** with `--configfile config/config.carbon-accounting.yaml` resolves 28 compose and 28
-   solve jobs (7 scenarios × 4 horizons). `test/test_carbon_accounting/test_config.py` checks that
-   each DP run differs from `DP_base` only in the keys of the run table.
+4. **Dry run** with `--configfile config/config.design-principles.yaml` resolves 16 compose and
+   16 solve jobs (4 scenarios × 4 horizons). `test/test_carbon_accounting/test_config.py` checks
+   that each DP run differs from `DP_base` only in the keys of the run table.
 
 ## Local test run (2026-11-22)
 
@@ -89,7 +91,7 @@ EAG and electrolysis limits have zero duals. Caveats for the production runs:
   in all runs but `DP2_at10`; no KLIEN caps and PyPSA-Eur onwind brownfield in AT in `DP1`; no AT
   CO2 budget and no EAG/electrolysis/net-zero-electricity constraints in `DP3`.
 - Acceptance: each pair differs only in the keys listed above (diff of the resolved configs in
-  `results/carbon-accounting/<scenario>/configs/`).
+  `results/design-principles/<scenario>/configs/`).
 
 ## Open (discussion later)
 

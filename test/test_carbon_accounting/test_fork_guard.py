@@ -34,6 +34,8 @@ CA_OWNED = (
     "config/plotting.ca.yaml",
     "config/config.carbon-accounting.yaml",
     "config/scenarios.carbon-accounting.yaml",
+    "config/config.design-principles.yaml",
+    "config/scenarios.design-principles.yaml",
     "CHANGELOG.CA.md",
     "CLAUDE.CA.md",
     ".github/workflows/ca-fork-guard.yaml",

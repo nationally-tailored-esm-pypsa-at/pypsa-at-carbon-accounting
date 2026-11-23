@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
-"""Smoke tests for the reduced carbon accounting configuration."""
+"""Smoke tests for the carbon accounting and design-principle configurations."""
 
 import re
 from copy import deepcopy
@@ -20,17 +20,31 @@ CONFIG_STACK = (
     "config/config.de.yaml",
     "config/config.at.yaml",
     "config/config.ca.yaml",
+)
+OVERLAYS = (
     "config/config.carbon-accounting.yaml",
+    "config/config.design-principles.yaml",
 )
 
 
-@pytest.fixture(scope="module")
-def config() -> dict:
+def merge_config(overlay: str) -> dict:
     """Merge the config stack the way Snakemake applies ``--configfile``."""
     merged = {}
-    for path in CONFIG_STACK:
+    for path in (*CONFIG_STACK, overlay):
         update_config(merged, yaml.safe_load(Path(path).read_text()))
     return merged
+
+
+@pytest.fixture(scope="module", params=OVERLAYS)
+def config(request) -> dict:
+    """Return the merged config of every ``--configfile`` overlay."""
+    return merge_config(request.param)
+
+
+@pytest.fixture(scope="module")
+def dp_config() -> dict:
+    """Return the merged config of the design-principle overlay."""
+    return merge_config("config/config.design-principles.yaml")
 
 
 def test_config_validates(config):
@@ -92,7 +106,7 @@ def test_pypsa_at_plotting_has_no_carbon_accounting_colors():
 DP_DIFFERENCES = {
     "DP1_no_national_data": {
         "mods.klien_potential_limits.technologies",
-        "mods.onwind_brownfield.enable",
+        "mods.carbon_accounting.onwind_brownfield.enable",
     },
     "DP2_at10": {"mods.modify_nuts3_shapes", "clustering.administrative.AT"},
     "DP3_no_national_policy": {
@@ -122,12 +136,12 @@ def _flatten(d: dict, prefix: str = "") -> dict:
 
 
 @pytest.fixture(scope="module")
-def dp_configs(config) -> dict[str, dict]:
+def dp_configs(dp_config) -> dict[str, dict]:
     """Return the flattened, resolved config of every DP scenario."""
-    scenarios = yaml.safe_load(Path(config["run"]["scenarios"]["file"]).read_text())
+    scenarios = yaml.safe_load(Path(dp_config["run"]["scenarios"]["file"]).read_text())
     resolved = {}
     for name in ("DP_base", *DP_DIFFERENCES):
-        merged = deepcopy(config)
+        merged = deepcopy(dp_config)
         update_config(merged, scenarios[name])
         merged.pop("run")
         merged.pop("description", None)
@@ -135,8 +149,8 @@ def dp_configs(config) -> dict[str, dict]:
     return resolved
 
 
-def test_dp_runs_are_listed(config):
-    assert {"DP_base", *DP_DIFFERENCES} <= set(config["run"]["name"])
+def test_dp_runs_are_listed(dp_config):
+    assert set(dp_config["run"]["name"]) == {"DP_base", *DP_DIFFERENCES}
 
 
 @pytest.mark.parametrize("scenario", DP_DIFFERENCES)
@@ -162,6 +176,6 @@ def test_dp3_removes_at_budget_only(dp_configs):
 
 
 def test_onwind_brownfield_default(config):
-    toggle = config["mods"]["onwind_brownfield"]
+    toggle = config["mods"]["carbon_accounting"]["onwind_brownfield"]
     assert next(iter(toggle)) == "enable"
     assert toggle["enable"] is True

@@ -25,6 +25,6 @@ def onwind_brownfield_enabled(config: dict) -> bool:
     Returns
     -------
     :
-        The value of ``mods.onwind_brownfield.enable``.
+        The value of ``mods.carbon_accounting.onwind_brownfield.enable``.
     """
-    return bool(config["mods"]["onwind_brownfield"]["enable"])
+    return bool(config["mods"]["carbon_accounting"]["onwind_brownfield"]["enable"])
