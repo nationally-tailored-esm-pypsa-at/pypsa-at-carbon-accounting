@@ -65,6 +65,10 @@ DP_DIFFERENCES: dict[str, set[str]] = {
         "mods.net_zero_electricity.enable",
     },
 }
+# DP3 plus the KLIEN potential caps off: shows whether the caps mask the policy effect
+DP_DIFFERENCES["DP3a_no_national_policy_no_klien"] = DP_DIFFERENCES[
+    "DP3_no_national_policy"
+] | {"mods.klien_potential_limits.technologies"}
 # config keys that differ between every pair of runs; ``resources`` is input data
 # provenance written by the workflow, not configuration
 IGNORED_KEYS: tuple[str, ...] = ("run", "wildcards", "description", "resources")
@@ -1232,11 +1236,17 @@ def net_imports(n: pypsa.Network, country: str) -> pd.Series:
     """
     Return the net import of every carrier into a country in TWh.
 
-    Counts the ports of branches that connect the country with a bus outside
-    it (including EU copper plates); accounting carriers are left out.
+    Counts the ports of transfers (lines, and links whose ``bus0`` has the
+    carrier of the port) that connect the country with a bus of the same
+    carrier outside it; accounting carriers are left out. Conversion links
+    with a port abroad (``co2 atmosphere``, EU copper plates) are no trade.
     """
     flows = port_flows(n)
     branches = flows[flows.component.isin(["Line", "Link"])]
+    bus0_carrier = branches.name.map(n.links.bus0.map(n.buses.carrier))
+    branches = branches[
+        (branches.component == "Line") | (bus0_carrier == branches.bus_carrier)
+    ]
     countries = branches.groupby("name").bus_country.agg(set)
     crossing = countries.index[
         countries.map(lambda c: country in c and len(c - {"", country}) > 0)
@@ -1405,3 +1415,172 @@ def policy_outcomes(networks: Networks, country: str, reference: str) -> pd.Data
     out = pd.DataFrame.from_dict(frames, orient="index").astype(float)
     out.index.names = ["scenario", "horizon"]
     return out
+
+
+# --- (C) target attainment and energy supply -----------------------------------
+
+# short label and unit (label, divisor) of every national policy constraint
+POLICY_LABELS: dict[str, str] = {
+    "co2_limit-{ct}": "CO2 budget",
+    "production_limit_lower-solar-{ct}": "EAG solar",
+    "production_limit_lower-wind-{ct}": "EAG wind",
+    "production_limit_lower-hydro-{ct}": "EAG hydro",
+    "production_limit_lower-biomass-{ct}": "EAG biomass",
+    "capacity_minimum-{ct}-Link-H2-Electrolysis": "Electrolysis",
+    "net-zero-electricity-production-{ct}": "100 % RE electricity",
+    "green-gas-production-{ct}": "Green gas surplus",
+    "green-h2-production-{ct}": "Green H2 surplus",
+    "green-methanol-production-{ct}": "Green methanol surplus",
+}
+POLICY_UNITS: dict[str, tuple[str, float]] = {
+    "co2_limit": ("Mt CO2", MT),
+    "capacity_minimum": ("GW", GW),
+}
+DEFAULT_POLICY_UNIT: tuple[str, float] = ("TWh", TWH)
+
+
+def policy_attainment(status: pd.DataFrame, country: str) -> pd.DataFrame:
+    """
+    Return :func:`policy_status` in plot units, one row per run and constraint.
+
+    Parameters
+    ----------
+    status
+        Output of :func:`policy_status`.
+    country
+        Country code of the constraint names.
+
+    Returns
+    -------
+    :
+        Columns ``scenario``, ``horizon``, ``constraint`` (name), ``label``,
+        ``unit``, ``value``, ``target``, ``slack`` (in ``unit``), ``mu`` and
+        ``binding``, in the order of :data:`POLICY_LABELS`.
+    """
+    labels = {k.format(ct=country): v for k, v in POLICY_LABELS.items()}
+    out = status.reset_index()
+    out = out[out.constraint.isin(labels)].copy()
+    units = out.constraint.map(
+        lambda c: next(
+            (u for prefix, u in POLICY_UNITS.items() if c.startswith(prefix)),
+            DEFAULT_POLICY_UNIT,
+        )
+    )
+    divisor = units.str[1]
+    for column in ("value", "target", "slack"):
+        out[column] = out[column] / divisor
+    out["label"] = out.constraint.map(labels)
+    out["unit"] = units.str[0]
+    out["order"] = out.constraint.map({c: i for i, c in enumerate(labels)})
+    columns = ["scenario", "horizon", "constraint", "label", "unit", "value"]
+    columns += ["target", "slack", "mu", "binding"]
+    return out.sort_values(["order", "scenario", "horizon"])[columns].reset_index(
+        drop=True
+    )
+
+
+# energy carriers of the supply balance (question C2), carrier -> bus carriers;
+# storage buses belong to the carrier they store, so storage is not production
+ENERGY_CARRIERS: dict[str, tuple[str, ...]] = {
+    "electricity": (
+        "AC",
+        "low voltage",
+        "battery",
+        "home battery",
+        "EV battery",
+        "PHS",
+        "hydro",
+    ),
+    "methane": ("gas", "gas for industry"),
+    "hydrogen": ("H2", "H2 for industry"),
+    "liquid fuels": (
+        "oil",
+        "land transport oil",
+        "agriculture machinery oil",
+        "shipping oil",
+        "kerosene for aviation",
+        "naphtha for industry",
+        "methanol",
+        "industry methanol",
+        "shipping methanol",
+    ),
+    "solid biomass": ("solid biomass", "solid biomass for industry"),
+}
+# generators that bring a carrier from outside the model into a country
+IMPORT_GENERATOR = r"^import"
+
+
+def energy_supply(n: pypsa.Network, country: str) -> pd.DataFrame:
+    """
+    Return how each energy carrier reaches a country: produced there or imported.
+
+    ``produced`` is what generators and conversion links located in the country
+    inject into buses of the carrier (renewables, power plants, electrolysis,
+    biogas upgrading, Fischer-Tropsch, ...). Hydro and PHS count their inflow,
+    before the turbine. A link is a *transfer* of a carrier if its ``bus0`` is a
+    bus of that carrier (grids, pipelines, distribution, storage charging,
+    ``gas for industry``); transfers neither produce nor consume.
+
+    ``net import`` is the net inflow over transfers that connect the country's
+    buses of the carrier with buses abroad, plus the carrier the country's
+    assets take from (or put on) buses outside the country, such as the EU oil
+    and methanol copper plates, plus ``import`` generators in the country.
+    Negative values are net exports.
+
+    Parameters
+    ----------
+    n
+        A solved network.
+    country
+        Country code.
+
+    Returns
+    -------
+    :
+        Columns ``produced`` and ``net import`` in TWh, indexed by ``carrier``
+        (the keys of :data:`ENERGY_CARRIERS`).
+    """
+    flows = port_flows(n)
+    bus0_carrier = n.links.bus0.map(n.buses.carrier)
+    rows = {}
+    for carrier, bus_carriers in ENERGY_CARRIERS.items():
+        f = flows[flows.bus_carrier.isin(bus_carriers)]
+        transfer = (f.component == "Line") | (
+            (f.component == "Link")
+            & f.name.map(bus0_carrier).isin(bus_carriers).fillna(False)
+        )
+        imported = f.carrier.str.contains(IMPORT_GENERATOR) & (
+            f.component == "Generator"
+        )
+        home = f.bus_country == country
+        # transfers with ports of this carrier at home and abroad
+        countries = f[transfer].groupby("name").bus_country.agg(set)
+        crossing = countries.index[
+            countries.map(lambda c: country in c and len(c - {country}) > 0)
+        ]
+        across = -f[transfer & home & f.name.isin(crossing)].energy.sum()
+        assets = (
+            f.component.isin(["Generator", "Link"])
+            & ~transfer
+            & (f.asset_country == country)
+        )
+        abroad = f[assets & ~imported & ~home].energy.sum()
+        generators = -f[imported & home].energy.sum()
+        injected = f[assets & ~imported].energy
+        rows[carrier] = {
+            "produced": -injected[injected < 0].sum() / TWH,
+            "net import": (across + abroad + generators) / TWH,
+        }
+    out = pd.DataFrame.from_dict(rows, orient="index")
+    out.index.name = "carrier"
+    return out
+
+
+def energy_supply_table(networks: Networks, country: str) -> pd.DataFrame:
+    """Return :func:`energy_supply` for every run, indexed by scenario, horizon, carrier."""
+    frames = {
+        (scenario, horizon): energy_supply(n, country)
+        for scenario, horizons in networks.items()
+        for horizon, n in horizons.items()
+    }
+    return pd.concat(frames, names=["scenario", "horizon"])

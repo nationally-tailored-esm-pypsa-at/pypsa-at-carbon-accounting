@@ -523,3 +523,126 @@ def test_electrolysis_total(solved_policy):
     assert dp.electrolysis_total(solved_policy, "AT") == pytest.approx(
         solved_policy.links.p_nom_opt["AT1 H2 Electrolysis"]
     )
+
+
+def build_supply_network() -> pypsa.Network:
+    """
+    Build an AT/DE network with a fixed dispatch (2 snapshots, weight 1).
+
+    AT1 produces solar power, power from a gas CHP that emits to the EU
+    ``co2 atmosphere``, H2 from electrolysis and Fischer-Tropsch fuel onto the
+    EU oil copper plate; it imports power and gas from DE, an ``import H2``
+    generator and land transport oil from the EU plate; it charges a battery.
+    """
+    n = pypsa.Network()
+    n.set_snapshots(pd.date_range("2030-01-01", periods=2, freq="h"))
+    for name, carrier, location in [
+        ("AT1", "AC", "AT1"),
+        ("AT1 gas", "gas", "AT1"),
+        ("AT1 H2", "H2", "AT1"),
+        ("AT1 battery", "battery", "AT1"),
+        ("AT1 land transport oil", "land transport oil", "AT1"),
+        ("DE1", "AC", "DE1"),
+        ("DE1 gas", "gas", "DE1"),
+        ("EU oil", "oil", "EU"),
+        ("co2 atmosphere", "co2", "EU"),
+    ]:
+        n.add("Bus", name, carrier=carrier, location=location)
+    n.add("Generator", "AT1 solar", bus="AT1", carrier="solar")
+    n.add("Generator", "AT1 import H2", bus="AT1 H2", carrier="import H2")
+    n.add("Line", "AT1-DE1", bus0="AT1", bus1="DE1", x=0.1, s_nom=10)
+    n.add("Store", "AT1 battery", bus="AT1 battery", carrier="battery")
+    links = {  # name: (bus0, bus1, bus2, carrier, p0, p1, p2)
+        "DE1 gas pipeline": ("DE1 gas", "AT1 gas", "", "gas pipeline", 5, -5, 0),
+        "AT1 CHP": ("AT1 gas", "AT1", "co2 atmosphere", "CHP", 4, -2, -0.8),
+        "AT1 H2 Electrolysis": ("AT1", "AT1 H2", "", "H2 Electrolysis", 2, -1.4, 0),
+        "AT1 land transport oil": (
+            "EU oil",
+            "AT1 land transport oil",
+            "co2 atmosphere",
+            "land transport oil",
+            3,
+            -3,
+            -0.8,
+        ),
+        "AT1 Fischer-Tropsch": ("AT1 H2", "EU oil", "", "Fischer-Tropsch", 1, -0.7, 0),
+        "AT1 battery charger": (
+            "AT1",
+            "AT1 battery",
+            "",
+            "battery charger",
+            1,
+            -0.9,
+            0,
+        ),
+    }
+    for name, (bus0, bus1, bus2, carrier, *_) in links.items():
+        n.add("Link", name, bus0=bus0, bus1=bus1, bus2=bus2, carrier=carrier)
+    for port in range(3):
+        n.links_t[f"p{port}"] = pd.DataFrame(
+            {name: v[4 + port] for name, v in links.items()}, index=n.snapshots
+        )
+    n.generators_t.p = pd.DataFrame(
+        {"AT1 solar": 10.0, "AT1 import H2": 1.0}, index=n.snapshots
+    )
+    n.lines_t.p0 = pd.DataFrame({"AT1-DE1": -3.0}, index=n.snapshots)
+    n.lines_t.p1 = pd.DataFrame({"AT1-DE1": 3.0}, index=n.snapshots)
+    return n
+
+
+class TestEnergySupply:
+    @pytest.fixture
+    def supply(self):
+        return dp.energy_supply(build_supply_network(), "AT") * dp.TWH  # MWh
+
+    def test_electricity(self, supply):
+        # solar 2 * 10 + CHP 2 * 2; battery charging is a transfer
+        assert supply.loc["electricity", "produced"] == pytest.approx(24)
+        assert supply.loc["electricity", "net import"] == pytest.approx(6)
+
+    def test_gas_burnt_with_co2_to_eu_is_no_export(self, supply):
+        assert supply.loc["methane", "produced"] == pytest.approx(0)
+        assert supply.loc["methane", "net import"] == pytest.approx(10)
+
+    def test_import_generator_is_import(self, supply):
+        assert supply.loc["hydrogen", "produced"] == pytest.approx(2.8)
+        assert supply.loc["hydrogen", "net import"] == pytest.approx(2)
+
+    def test_eu_copper_plate(self, supply):
+        # 6 from the EU plate into AT, minus 1.4 Fischer-Tropsch put onto it
+        assert supply.loc["liquid fuels", "produced"] == pytest.approx(1.4)
+        assert supply.loc["liquid fuels", "net import"] == pytest.approx(4.6)
+
+
+def test_net_imports_skip_conversion_links_abroad():
+    imports = dp.net_imports(build_supply_network(), "AT") * dp.TWH
+    assert imports["AC"] == pytest.approx(6)
+    assert imports["gas"] == pytest.approx(10)
+    assert "H2" not in imports
+
+
+def test_policy_attainment_units():
+    index = pd.MultiIndex.from_tuples(
+        [
+            ("DP_base", "2030", "co2_limit-AT"),
+            ("DP_base", "2030", "capacity_minimum-AT-Link-H2-Electrolysis"),
+            ("DP_base", "2030", "production_limit_lower-wind-AT"),
+            ("DP_base", "2030", "co2_limit-DE"),
+        ],
+        names=["scenario", "horizon", "constraint"],
+    )
+    status = pd.DataFrame(
+        {
+            "value": [2e6, 1e3, 3e7, 1.0],
+            "target": [3e6, 1e3, 2e7, 1.0],
+            "slack": [1e6, 0.0, 1e7, 0.0],
+            "mu": [0.0, 5.0, 0.0, 0.0],
+            "binding": [False, True, False, False],
+        },
+        index=index,
+    )
+    out = dp.policy_attainment(status, "AT").set_index("label")
+    assert list(out.index) == ["CO2 budget", "EAG wind", "Electrolysis"]
+    assert out.loc["CO2 budget", ["value", "unit"]].tolist() == [2.0, "Mt CO2"]
+    assert out.loc["EAG wind", ["value", "slack", "unit"]].tolist() == [30, 10, "TWh"]
+    assert out.loc["Electrolysis", ["value", "unit"]].tolist() == [1.0, "GW"]

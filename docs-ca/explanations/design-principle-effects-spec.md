@@ -40,6 +40,7 @@ pair: `DP_base` (full PyPSA-AT) vs a run without the principle.
 | `DP1_no_national_data` | P1 | KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`, PyPSA-Eur/ERA5 potentials apply) **and** KLIEN onwind brownfield off (`mods.carbon_accounting.onwind_brownfield.enable: false`, PyPSA-Eur existing onwind capacities apply) |
 | `DP2_at10` | P2 | `mods.modify_nuts3_shapes: AT10DE5`, `clustering.administrative.AT: 2` |
 | `DP3_no_national_policy` | P3 | all national AT policy constraints removed (table below) |
+| `DP3a_no_national_policy_no_klien` | P3 | as `DP3_no_national_policy`, plus KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`); onwind brownfield unchanged. Control run: the KLIEN caps can bind the same AT solar and wind capacities as the policy targets and so mask the P3 effect |
 
 `CA_base` (AT10) is not reused as a DP run: if the temporal resolution of the DP runs is
 coarsened, it would differ from `DP_base` in two choices. The DP runs have their own overlay,

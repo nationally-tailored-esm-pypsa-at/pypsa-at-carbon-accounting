@@ -17,7 +17,7 @@ Specification: ``docs-ca/explanations/design-principle-eval-spec.md``.
 
 import marimo
 
-__generated_with = "0.25.0"
+__generated_with = "0.25.1"
 app = marimo.App(width="full", app_title="Design-principle evaluation")
 
 
@@ -30,6 +30,7 @@ def _():
     import pandas as pd
     import plotly.express as px
     import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
 
     REPO = Path(__file__).resolve().parents[3]
     if str(REPO) not in sys.path:
@@ -38,7 +39,7 @@ def _():
     from evals.carbon_accounting import accounting as ca
     from evals.carbon_accounting import design_principles as dp
 
-    return REPO, ca, dp, go, mo, pd, px
+    return REPO, ca, dp, go, make_subplots, mo, pd, px
 
 
 @app.cell
@@ -133,7 +134,9 @@ def _(PALETTE, ca, dp, mo, root_input):
         value=dp.REFERENCE if dp.REFERENCE in files else next(iter(files)),
         label="Reference",
     )
-    country_select = mo.ui.dropdown(options=["AT"], value="AT", label="Country")
+    country_select = mo.ui.dropdown(
+        options=["AT"], value="AT", label="Country"
+    )  # TODO: add other countries, to be able to evaluate effects of AT on other countries too
     ignore_checks = mo.ui.checkbox(label="Continue despite failed checks")
     return (
         colours,
@@ -166,19 +169,11 @@ def _(ca, dp, mo, paths):
         """Apply a function of ``dp`` to the reference and one run, once."""
         return getattr(dp, name)(networks([reference, other]), country, *args)
 
-    return load, networks, per_pair, per_scenario
+    return networks, per_pair, per_scenario
 
 
 @app.cell(expand_output=True)
-def _(
-    country_select,
-    files,
-    mo,
-    pd,
-    reference_select,
-    scenario_select,
-    table,
-):
+def _(country_select, files, mo, pd, reference_select, scenario_select, table):
     _info = pd.DataFrame(
         [(s, h, str(p)) for s, hs in files.items() for h, p in hs.items()],
         columns=["scenario", "horizon", "file"],
@@ -219,23 +214,23 @@ def _(
         {s: files[s] for s in selected}, networks(selected), reference, country
     )
     _status = step_status(_checks)
-    mo.output.replace(
-        mo.vstack(
-            [
-                mo.md(f"## 1 Checks {ICONS[_status]}"),
-                *[badge(c) for c in _checks],
-                mo.accordion(
-                    {
-                        c.name: mo.ui.table(c.details.reset_index(), selection=None)
-                        for c in _checks
-                        if not c.details.empty
-                    }
-                ),
-                ignore_checks,
-            ]
-        )
+    _view = mo.vstack(
+        [
+            mo.md(f"## 1 Checks {ICONS[_status]}"),
+            *[badge(c) for c in _checks],
+            mo.accordion(
+                {
+                    c.name: mo.ui.table(c.details.reset_index(), selection=None)
+                    for c in _checks
+                    if not c.details.empty
+                }
+            ),
+            ignore_checks,
+        ]
     )
-    mo.stop(_status == "fail" and not ignore_checks.value)
+    mo.output.replace(_view)
+    # mo.stop replaces the cell output; pass the view so the checks stay visible
+    mo.stop(_status == "fail" and not ignore_checks.value, _view)
     checked = True
     return (checked,)
 
@@ -523,33 +518,194 @@ def _(b_select, colours, go, grid, layout, mo, reference, table):
 
 
 @app.cell(expand_output=True)
-def _(c_select, country, dp, mo, per_pair, reference, table):
+def _(
+    c_select,
+    colours,
+    country,
+    dp,
+    go,
+    make_subplots,
+    mo,
+    per_pair,
+    reference,
+    table,
+):
     _other = c_select.value
+    _runs = [reference, _other]
     _status = per_pair("policy_status", reference, _other, country, reference)
+    _attain = dp.policy_attainment(_status, country)
+    _attain = _attain[_attain.groupby("label").value.transform("count") > 0]
+    _supply = per_pair("energy_supply_table", reference, _other, country)
     _outcomes = dp.add_deltas(
         per_pair("policy_outcomes", reference, _other, country, reference), reference
     )
     _replace = per_pair(
         "replacement_table", reference, _other, country, reference, _other
     )
+
+    # C1: one panel per policy, value of both runs against the reference target
+    _labels = list(dict.fromkeys(_attain.label))
+    _cols = 5
+    _rows = -(-len(_labels) // _cols)
+    _units = _attain.groupby("label").unit.first()
+    _goal = make_subplots(
+        rows=_rows,
+        cols=_cols,
+        subplot_titles=[f"{_l} ({_units[_l]})" for _l in _labels],
+        vertical_spacing=0.16,
+        horizontal_spacing=0.05,
+    )
+    for _i, _label in enumerate(_labels):
+        _row, _col = _i // _cols + 1, _i % _cols + 1
+        _p = _attain[_attain.label == _label]
+        _t = _p[_p.scenario == reference]
+        _goal.add_trace(
+            go.Scatter(
+                x=_t.horizon,
+                y=_t.target,
+                name=f"target ({reference})",
+                legendgroup="target",
+                showlegend=_i == 0,
+                mode="lines+markers",
+                line=dict(color="#6b6a63", dash="dash", width=2),
+                marker=dict(symbol="line-ew-open", size=14, color="#6b6a63"),
+                hovertemplate="target %{y:.2f}<extra></extra>",
+            ),
+            row=_row,
+            col=_col,
+        )
+        for _scenario in _runs:
+            _s = _p[_p.scenario == _scenario]
+            _goal.add_trace(
+                go.Scatter(
+                    x=_s.horizon,
+                    y=_s.value,
+                    name=_scenario,
+                    legendgroup=_scenario,
+                    showlegend=_i == 0,
+                    mode="lines+markers",
+                    line=dict(color=colours[_scenario], width=2),
+                    marker=dict(
+                        size=10,
+                        color=colours[_scenario],
+                        symbol=["circle" if _b else "circle-open" for _b in _s.binding],
+                        line=dict(width=2, color=colours[_scenario]),
+                    ),
+                    customdata=_s[["target", "slack", "mu"]].to_numpy(),
+                    hovertemplate=(
+                        f"<b>{_scenario}</b> %{{x}}<br>value %{{y:.2f}}"
+                        "<br>target %{customdata[0]:.2f}"
+                        "<br>slack %{customdata[1]:.2f}<br>mu %{customdata[2]:.3g}"
+                        "<extra></extra>"
+                    ),
+                ),
+                row=_row,
+                col=_col,
+            )
+    _goal.update_xaxes(type="category")
+    _goal.update_yaxes(zeroline=True, zerolinecolor="#c3c2b7", rangemode="tozero")
+    _goal.update_layout(
+        title="Policy value per horizon vs the target of the reference "
+        "(filled marker: constraint binds)",
+        template="plotly_white",
+        height=330 * _rows + 80,
+        legend=dict(orientation="h", y=-0.08),
+        margin=dict(t=90, b=40),
+    )
+
+    # C2: produced in the country and net import per energy carrier
+    _carriers = list(dp.ENERGY_CARRIERS)
+    _flow = make_subplots(
+        rows=1,
+        cols=len(_carriers),
+        subplot_titles=_carriers,
+        horizontal_spacing=0.04,
+        shared_yaxes=False,
+    )
+    _parts = [
+        ("produced", "", f"produced in {country}"),
+        ("net import", "/", "net import"),
+    ]
+    for _j, _carrier in enumerate(_carriers):
+        for _scenario in _runs:
+            _r = _supply.xs((_scenario, _carrier), level=["scenario", "carrier"])
+            for _part, _pattern, _name in _parts:
+                _flow.add_trace(
+                    go.Bar(
+                        x=list(_r.index),
+                        y=_r[_part],
+                        name=f"{_scenario} {_name}",
+                        legendgroup=f"{_scenario} {_part}",
+                        showlegend=_j == 0,
+                        offsetgroup=_scenario,
+                        marker=dict(
+                            color=colours[_scenario],
+                            pattern=dict(
+                                shape=_pattern, fgcolor="white", solidity=0.45
+                            ),
+                            line=dict(width=1, color="white"),
+                        ),
+                        hovertemplate=(
+                            f"<b>{_scenario}</b> %{{x}}<br>{_name} %{{y:.1f}} TWh"
+                            "<extra></extra>"
+                        ),
+                    ),
+                    row=1,
+                    col=_j + 1,
+                )
+    _flow.update_xaxes(type="category")
+    _flow.update_yaxes(zeroline=True, zerolinecolor="#6b6a63")
+    _flow.update_yaxes(title_text="TWh", row=1, col=1)
+    _flow.update_layout(
+        title=f"Energy supply of {country}: produced in {country} (solid) and net "
+        "import (hatched, < 0 = net export)",
+        template="plotly_white",
+        barmode="relative",
+        bargap=0.25,
+        bargroupgap=0.08,
+        height=460,
+        legend=dict(orientation="h", y=-0.15),
+        margin=dict(t=90, b=40),
+    )
+
     mo.vstack(
         [
             mo.md(
                 "## C Policy (P3): are the policy goals binding, and what replaces "
                 "them?\n\n"
-                "**C1** value, target (constant of the reference) and dual of every "
-                "national policy constraint. The values re-evaluate the constraint "
-                "expressions on the solved network, also in a run without the "
-                "constraint (with the reference's formula); `slack < 0` means the run "
-                "misses the target."
+                f"Compares {reference} (national policies) with the selected run "
+                "(none). The policies act on the national build-up; without them the "
+                "model may meet the same demand from abroad instead."
             ),
             c_select,
-            table(_status, digits=1),
             mo.md(
-                "**C2** outcomes on the elements of the policies (Mt, TWh, GW), Δ vs "
-                "the reference."
+                "**C1 Target attainment.** One panel per national policy constraint: "
+                "its value (the constraint expression re-evaluated on the solved "
+                f"network, with the formulas of {reference}) and the target "
+                f"(constant of {reference}). Filled marker: the constraint binds "
+                "(`|mu| > 1e-3`); a run without it has open markers. A line of the "
+                "run below the target (above, for the CO2 budget) means it misses "
+                "the policy goal."
             ),
-            table(_outcomes),
+            mo.ui.plotly(_goal),
+            mo.md(
+                f"**C2 Energy supply.** How each carrier reaches {country}: produced "
+                f"by generators and conversion plants in {country}, or net imported "
+                f"(cross-border grids and pipelines, the EU oil and methanol copper "
+                f"plates, import generators). Storage and grids inside {country} are "
+                "transfers, hydro counts its inflow. The shift between the two parts "
+                "shows how the policies trade national build-up for imports."
+            ),
+            mo.ui.plotly(_flow),
+            mo.accordion(
+                {
+                    "C1 table: value, target, slack and dual": table(_status, digits=1),
+                    "C2 table: energy supply (TWh)": table(_supply, digits=2),
+                    "C2 table: outcomes on the policy elements, Δ vs the reference": (
+                        table(_outcomes)
+                    ),
+                }
+            ),
             mo.md(
                 "**C3** constraints that bind the same elements: CO2 prices, binding "
                 "potential buses (A), biomass potential used, electrolysis at its "
