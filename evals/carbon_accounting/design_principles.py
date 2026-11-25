@@ -67,6 +67,15 @@ DP_DIFFERENCES: dict[str, set[str]] = {
         "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2040",
         "solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT.2050",
         "mods.net_zero_electricity.enable",
+        # cross-border flow and infrastructure constraints
+        "mods.tyndp_cross_border_flow_limits.enable",
+        "mods.tyndp_lower_bounds.enable",
+        "mods.threshold_year_for_gas_grid_expansion",
+        "sector.imports.carriers_tyndp",
+        *(
+            f"solving.constraints.limits_volume_max.electricity_import.DE.{year}"
+            for year in range(2020, 2055, 5)
+        ),
     },
 }
 # runs that are compared with another run than ``REFERENCE`` (one choice apart)

@@ -33,6 +33,8 @@ DP2_at10:
 # via mods.klien_potential_limits.use_technical_potentials (false: scenario potentials
 # as in DP_base). KLIEN onwind brownfield and all other settings stay as in DP_base.
 # DP3_no_national_policy is compared with DP3_with_national_policy, not with DP_base.
+# DP3_no_national_policy also drops the constraints on cross-border flows and
+# infrastructure (see docs-ca/explanations/design-principle-effects-spec.md).
 DP3_with_national_policy:
   description: DP_base with KLIEN technical potentials instead of scenario potentials - basis for comparison with DP3_no_national_policy (P3)
   mods:
@@ -40,17 +42,44 @@ DP3_with_national_policy:
       use_technical_potentials: true
 
 DP3_no_national_policy:
-  description: DP3_with_national_policy without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity
+  description: DP3_with_national_policy without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity, and no cross-border flow and infrastructure constraints (NTC limits and floors, DE electricity import limit, TYNDP H2 imports, frozen gas grid)
   mods:
     klien_potential_limits:
       use_technical_potentials: true
     net_zero_electricity:
       enable: false
+    # no TYNDP NTC net-flow limits and no NTC capacity floors on cross-border lines/links
+    tyndp_cross_border_flow_limits:
+      enable: false
+    tyndp_lower_bounds:
+      enable: false
+    # a threshold year before the first planning horizon skips fix_gas_grid_capacity and
+    # restore_asymmetric_pipeline_capacities in all horizons: gas pipelines (also AT and
+    # border corridors) and new gas pipeline candidates stay extendable and may be
+    # retrofitted to H2 without the AGGM target capacity
+    threshold_year_for_gas_grid_expansion: 2020
+  sector:
+    imports:
+      # no TYNDP H2 import generators (fixed p_nom, e_sum_max); the upstream price-based
+      # import options stay
+      carriers_tyndp: []
   solving:
     constraints:
       co2_budget_national:
         # null (empty): no national CO2 budget for AT, DE unchanged
         AT:
+      # DE net electricity import limit (TWh/a): non-binding, so the cross-border flow is
+      # free (the constraint stays in the network, a null would break the loop over DE)
+      limits_volume_max:
+        electricity_import:
+          DE:
+            2020: 500
+            2025: 500
+            2030: 500
+            2035: 500
+            2040: 500
+            2045: 500
+            2050: 500
       limits_volume_min:
         solar:
           AT:

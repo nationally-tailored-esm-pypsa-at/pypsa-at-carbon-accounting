@@ -59,6 +59,39 @@ so changes to the reduced carbon accounting setup never reach them.
 | 1 GW electrolysis | `solving.constraints.limits_capacity_min.Link.H2 Electrolysis.AT` | `0` (non-binding) |
 | 100 % RE electricity, annual balance, from 2030 | `mods.net_zero_electricity.enable` | `false` |
 
+### DP3: cross-border flow and infrastructure constraints removed
+
+`DP3_no_national_policy` also drops everything that restricts flows or infrastructure across
+the Austrian border (international embedding, P3). The pair `DP3_with_national_policy` keeps them.
+
+| Element | Where | In `DP3_no_national_policy` |
+|---|---|---|
+| TYNDP NTC net-flow limits per corridor (AC lines and DC links, per snapshot; 2030 and 2040) | `mods.tyndp_cross_border_flow_limits.enable`, `constraint_ntc_flow_limits` | `false` |
+| TYNDP NTC capacity floors (`s_nom_min`, `p_nom_min`; 2030 and 2040) | `mods.tyndp_lower_bounds.enable`, `apply_tyndp_transmission_lower_bounds` | `false` |
+| DE net electricity import limit (TWh/a; a DE limit, not AT) | `solving.constraints.limits_volume_max.electricity_import.DE` | `500` in every year (non-binding; the constraint stays in the network, because PyPSA-DE loops over the countries and a `null` would fail) |
+| TYNDP H2 import generators (fixed `p_nom`, `e_sum_max`) | `sector.imports.carriers_tyndp` | `[]`. The upstream price-based import options (`sector.imports.enable`, e.g. H2 at 74 EUR/MWh) stay |
+| Frozen gas grid: AGGM capacities fixed, no new methane pipelines, H2 retrofit only within the gas capacity, reverse legs restored | `mods.threshold_year_for_gas_grid_expansion`, `fix_gas_grid_capacity`, `restore_asymmetric_pipeline_capacities` | `2020` (before the first horizon: both functions are skipped in every horizon) |
+
+Gas grid in detail. In the PyPSA-AT default (`2040`) all `gas pipeline new` candidates are
+non-extendable; existing pipelines are fixed before the retrofit start year (2030, from
+`first_technology_occurrence`); afterwards only pipelines with an H2 retrofit candidate stay
+extendable up to their current capacity, so that the upstream retrofit constraint
+(`gas + H2 retrofitted / 0.6 = p_nom`) can only move capacity from gas to H2; one-way and
+asymmetric AT corridors keep their AGGM reverse capacity up to 2030. With `2020` the model
+falls back to the PyPSA-Eur logic: new methane pipelines and the existing ones are
+extendable everywhere, the retrofit candidates exist from 2030 (`H2 pipeline retrofitted: 2030`
+is unchanged) with `p_nom_max = 0.6 × gas capacity`, and the reverse legs regain the forward capacity
+at no cost (the "known limitation" noted in `gas.py`). The AGGM brownfield capacities
+themselves stay (`modify_brownfield_gas_network_AT` is on). The switch also frees domestic AT
+pipelines, not only the border corridors; a corridor-specific switch would need a CA hook in
+`mods/network/gas.py`.
+
+Not changed (kept in `DP3_no_national_policy`): `mods.block_russian_gas_imports`,
+`mods.unravel_natural_gas_imports`, `mods.PEMMDB_trajectories`, `mods.trajectories`, the DE
+`limits_volume_max.h2_import` and `h2_derivate_import`, the OSM cross-border line filter
+(`drop_cross_border_lines_lv`), and the upstream extension limits `lines.s_nom_max_extension` and
+`links.p_nom_max_extension`.
+
 ## Implementation items (done)
 
 1. **Onwind brownfield switch (P1).** Decided: CA hook only, no PyPSA-AT PR. The switch
@@ -102,12 +135,12 @@ EAG and electrolysis limits have zero duals. Caveats for the production runs:
 
 - **P1 scope:** other KLIEN uses stay active in `DP1` (hydro inflow targets, `klien_residual_plants`,
   KLIEN ror corridor). Switch them off as well?
-- **P3, international embedding:** belongs to P3, but kept unchanged in `DP3` for now:
-  `mods.tyndp_cross_border_flow_limits`, `mods.tyndp_lower_bounds` (NTC floors),
-  `mods.block_russian_gas_imports`, `mods.tyndp_h2_import_scenario`.
+- **P3, international embedding:** the NTC limits and floors, the TYNDP H2 imports, the DE
+  electricity import limit and the frozen gas grid are removed in `DP3_no_national_policy`. Kept
+  for now: `mods.block_russian_gas_imports`, `mods.PEMMDB_trajectories`, the DE H2 import and
+  H2 derivate import limits.
 - **P3, further national settings** kept unchanged for now: `mods.override_gas_storage_capacities`
-  (fixed gas storage, policy?), `mods.threshold_year_for_gas_grid_expansion` (frozen gas grid),
-  national capacity trajectories (`mods.trajectories`; Sec. 2.2 lists "national technology
+  (fixed gas storage, policy?), national capacity trajectories (`mods.trajectories`; Sec. 2.2 lists "national technology
   trajectories" under P3).
 - **Results location:** where cluster results are stored and how they reach the evaluation
   notebooks (see `CLAUDE.local.md`).

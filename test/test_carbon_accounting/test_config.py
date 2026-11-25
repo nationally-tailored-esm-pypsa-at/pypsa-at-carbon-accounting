@@ -149,6 +149,28 @@ def test_dp3_pair_shares_technical_potentials(dp_configs):
     assert DP_REFERENCES["DP3_no_national_policy"] == "DP3_with_national_policy"
 
 
+def test_dp3_removes_cross_border_constraints(dp_configs):
+    dp3 = dp_configs["DP3_no_national_policy"]
+    with_policy = dp_configs["DP3_with_national_policy"]
+    assert with_policy["mods.tyndp_cross_border_flow_limits.enable"] is True
+    assert with_policy["mods.tyndp_lower_bounds.enable"] is True
+    assert dp3["mods.tyndp_cross_border_flow_limits.enable"] is False
+    assert dp3["mods.tyndp_lower_bounds.enable"] is False
+    assert dp3["sector.imports.carriers_tyndp"] == []
+    # the gas grid freeze ends before the first planning horizon
+    assert dp3["mods.threshold_year_for_gas_grid_expansion"] < min(
+        dp3["planning_horizons"]
+    )
+    # the DE import limit stays in the network, but cannot bind
+    limits = {
+        k: v
+        for k, v in dp3.items()
+        if k.startswith("solving.constraints.limits_volume_max.electricity_import.DE.")
+    }
+    assert limits
+    assert all(v >= 500 for v in limits.values())
+
+
 def test_dp3_removes_at_budget_only(dp_configs):
     dp3 = dp_configs["DP3_no_national_policy"]
     assert dp3["solving.constraints.co2_budget_national.AT"] is None
