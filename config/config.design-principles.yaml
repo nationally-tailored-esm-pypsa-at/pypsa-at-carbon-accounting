@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: 2023-2026 Austrian Gas Grid Management AG
+#
+# SPDX-License-Identifier: MIT
+# For license information, see the LICENSE.txt file in the project root.
+
+# Design-principle effect runs (manuscript Sec. 3.2.1 / 4.1), see
+# docs-ca/explanations/design-principle-effects-spec.md. Layered on top of the
+# default stack via:
+#
+#   pixi run snakemake -call --configfile config/config.design-principles.yaml
+#
+# Only the keys below differ from config/config.at.yaml. DP_base is full
+# PyPSA-AT (AT35DE5) with technology-based carbon accounting; each scenario in
+# config/scenarios.design-principles.yaml differs from it in one principle.
+# Settings shared by all DP runs (e.g. a coarser temporal resolution) go here,
+# never into a single scenario.
+
+run:
+  prefix: design-principles
+  name:
+  - DP_base
+  - DP1_no_national_data
+  - DP2_at10
+  - DP3_with_national_policy
+  - DP3_no_national_policy
+  scenarios:
+    enable: true
+    file: config/scenarios.design-principles.yaml
+
+solving:
+  solver:
+    name: gurobi
+    options: gurobi-default

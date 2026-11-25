@@ -22,3 +22,10 @@ mods:
     fair_share:
       enable: false
       tolerance: 1.0  # cap = tolerance x key x EU green production
+
+    # KLIEN onshore-wind brownfield in AT (mods/network/onwind.py). Off: the
+    # existing onwind capacities of PyPSA-Eur stay. Switched off in the
+    # design-principle run DP1, see
+    # docs-ca/explanations/design-principle-effects-spec.md
+    onwind_brownfield:
+      enable: true

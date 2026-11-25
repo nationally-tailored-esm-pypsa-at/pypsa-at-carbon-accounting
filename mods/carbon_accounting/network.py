@@ -21,6 +21,7 @@ import pandas as pd
 import pypsa
 from snakemake.script import Snakemake
 
+from mods.carbon_accounting.budget import national_budgets
 from mods.carbon_accounting.constants import (
     ACCOUNTING_FUELS,
     ATTRIBUTE_CARRIERS,
@@ -701,7 +702,9 @@ def apply_carbon_accounting(
     add_attribute_ports(n)
     mark_transformed(n)
 
-    budgets = snakemake.config["solving"]["constraints"]["co2_budget_national"] or {}
+    budgets = national_budgets(
+        snakemake.config["solving"]["constraints"]["co2_budget_national"]
+    )
     price_claims(n, list(budgets), config["claim_cost"])
     if tolerance is not None:
         add_fair_share_keys(n)

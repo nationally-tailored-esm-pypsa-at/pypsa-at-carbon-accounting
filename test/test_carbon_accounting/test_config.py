@@ -2,15 +2,21 @@
 #
 # SPDX-License-Identifier: MIT
 # For license information, see the LICENSE.txt file in the project root.
-"""Smoke tests for the reduced carbon accounting configuration."""
+"""Smoke tests for the carbon accounting and design-principle configurations."""
 
 import re
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 import yaml
 from snakemake.utils import update_config
 
+from evals.carbon_accounting.design_principles import (
+    DP_DIFFERENCES,
+    DP_REFERENCES,
+    flatten,
+)
 from mods.clustering.constants import VALID_CONFIGURATIONS
 from scripts.lib.validation.config import validate_config
 
@@ -19,17 +25,31 @@ CONFIG_STACK = (
     "config/config.de.yaml",
     "config/config.at.yaml",
     "config/config.ca.yaml",
+)
+OVERLAYS = (
     "config/config.carbon-accounting.yaml",
+    "config/config.design-principles.yaml",
 )
 
 
-@pytest.fixture(scope="module")
-def config() -> dict:
+def merge_config(overlay: str) -> dict:
     """Merge the config stack the way Snakemake applies ``--configfile``."""
     merged = {}
-    for path in CONFIG_STACK:
+    for path in (*CONFIG_STACK, overlay):
         update_config(merged, yaml.safe_load(Path(path).read_text()))
     return merged
+
+
+@pytest.fixture(scope="module", params=OVERLAYS)
+def config(request) -> dict:
+    """Return the merged config of every ``--configfile`` overlay."""
+    return merge_config(request.param)
+
+
+@pytest.fixture(scope="module")
+def dp_config() -> dict:
+    """Return the merged config of the design-principle overlay."""
+    return merge_config("config/config.design-principles.yaml")
 
 
 def test_config_validates(config):
@@ -84,3 +104,89 @@ def test_pypsa_at_plotting_has_no_carbon_accounting_colors():
     ca_colors = tech_colors("config/plotting.ca.yaml")
     at_colors = tech_colors("config/plotting.at.yaml")
     assert not ca_colors.keys() & at_colors.keys()
+
+
+@pytest.fixture(scope="module")
+def dp_configs(dp_config) -> dict[str, dict]:
+    """Return the flattened, resolved config of every DP scenario."""
+    scenarios = yaml.safe_load(Path(dp_config["run"]["scenarios"]["file"]).read_text())
+    resolved = {}
+    for name in ("DP_base", *DP_DIFFERENCES):
+        merged = deepcopy(dp_config)
+        update_config(merged, scenarios[name])
+        merged.pop("run")
+        merged.pop("description", None)
+        resolved[name] = flatten(merged)
+    return resolved
+
+
+def test_dp_runs_are_listed(dp_config):
+    assert set(dp_config["run"]["name"]) == {"DP_base", *DP_DIFFERENCES}
+
+
+@pytest.mark.parametrize("scenario", DP_DIFFERENCES)
+def test_dp_run_differs_from_its_reference_in_one_principle(dp_configs, scenario):
+    base = dp_configs[DP_REFERENCES.get(scenario, "DP_base")]
+    run = dp_configs[scenario]
+    expected = DP_DIFFERENCES[scenario]
+    assert _differing(base, run, expected) == expected
+
+
+def _differing(a: dict, b: dict, expected: set) -> set:
+    differ = {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)}
+    # a key set to null drops all leaves below it
+    return {next((e for e in expected if k.startswith(f"{e}.")), k) for k in differ}
+
+
+def test_dp_base_at_nuts3(dp_configs):
+    assert dp_configs["DP_base"]["mods.modify_nuts3_shapes"] == "AT35DE5"
+    assert dp_configs["DP_base"]["clustering.administrative.AT"] == 3
+    assert dp_configs["DP_base"]["mods.carbon_accounting.method"] == "technology"
+
+
+def test_dp3_pair_shares_technical_potentials(dp_configs):
+    key = "mods.klien_potential_limits.use_technical_potentials"
+    assert dp_configs["DP_base"][key] is False
+    for scenario in ("DP3_with_national_policy", "DP3_no_national_policy"):
+        assert dp_configs[scenario][key] is True
+    assert DP_REFERENCES["DP3_no_national_policy"] == "DP3_with_national_policy"
+
+
+def test_dp3_removes_cross_border_constraints(dp_configs):
+    dp3 = dp_configs["DP3_no_national_policy"]
+    with_policy = dp_configs["DP3_with_national_policy"]
+    assert with_policy["mods.tyndp_cross_border_flow_limits.enable"] is True
+    assert with_policy["mods.tyndp_lower_bounds.enable"] is True
+    assert dp3["mods.tyndp_cross_border_flow_limits.enable"] is False
+    assert dp3["mods.tyndp_lower_bounds.enable"] is False
+    assert dp3["sector.imports.carriers_tyndp"] == []
+    # the gas grid freeze ends before the first planning horizon
+    assert dp3["mods.threshold_year_for_gas_grid_expansion"] < min(
+        dp3["planning_horizons"]
+    )
+    # the DE import limit stays in the network, but cannot bind
+    limits = {
+        k: v
+        for k, v in dp3.items()
+        if k.startswith("solving.constraints.limits_volume_max.electricity_import.DE.")
+    }
+    assert limits
+    assert all(v >= 500 for v in limits.values())
+
+
+def test_dp3_removes_at_budget_only(dp_configs):
+    dp3 = dp_configs["DP3_no_national_policy"]
+    assert dp3["solving.constraints.co2_budget_national.AT"] is None
+    assert dp3["solving.constraints.co2_budget_national.DE.2030"] is not None
+
+
+def test_dp3_keeps_h2_import_scenario(dp_configs):
+    """No neutral TYNDP H2 import scenario exists, so DP3 keeps the default."""
+    key = "mods.tyndp_h2_import_scenario"
+    assert dp_configs["DP3_no_national_policy"][key] == dp_configs["DP_base"][key]
+
+
+def test_onwind_brownfield_default(config):
+    toggle = config["mods"]["carbon_accounting"]["onwind_brownfield"]
+    assert next(iter(toggle)) == "enable"
+    assert toggle["enable"] is True

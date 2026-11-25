@@ -132,6 +132,7 @@ def fair_share_caps(n: pypsa.Network, p0: pd.Series) -> pd.Series:
         return pd.Series(dtype=float)
     tolerance = n.meta["mods"]["carbon_accounting"]["fair_share"]["tolerance"]
     budgets = n.meta["solving"]["constraints"]["co2_budget_national"] or {}
+    budgets = {ct: b for ct, b in budgets.items() if b is not None}
     keys = n.links["fair_share_key"].dropna()
     keys = keys[keys.index.str[:2].isin(list(budgets))]
     fuels = n.links.loc[keys.index, "carrier"].map(FUEL_CLAIM_CARRIERS)

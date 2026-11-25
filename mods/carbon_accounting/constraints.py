@@ -17,6 +17,7 @@ import pandas as pd
 import pypsa
 from linopy import LinearExpression
 
+from mods.carbon_accounting.budget import national_budgets
 from mods.carbon_accounting.constants import (
     CLAIM_CARRIERS,
     FAIR_SHARE_KEY,
@@ -209,5 +210,7 @@ def constraint_carbon_accounting(
     _add_transfer_bounds(n)
     tolerance = fair_share_tolerance(config)
     if tolerance is not None:
-        budgets = snakemake.config["solving"]["constraints"]["co2_budget_national"]
-        _add_fair_share_bounds(n, list(budgets or {}), tolerance)
+        budgets = national_budgets(
+            snakemake.config["solving"]["constraints"]["co2_budget_national"]
+        )
+        _add_fair_share_bounds(n, list(budgets), tolerance)

@@ -34,6 +34,8 @@ CA_OWNED = (
     "config/plotting.ca.yaml",
     "config/config.carbon-accounting.yaml",
     "config/scenarios.carbon-accounting.yaml",
+    "config/config.design-principles.yaml",
+    "config/scenarios.design-principles.yaml",
     "CHANGELOG.CA.md",
     "CLAUDE.CA.md",
     ".github/workflows/ca-fork-guard.yaml",
@@ -56,6 +58,7 @@ HOOKED = (
 # PyPSA-AT lines that a fenced hook replaces, per hooked file (stripped). Any
 # other PyPSA-AT line that a hooked file drops or changes fails the guard.
 REPLACED = {
+    "mods/network/common.py": ("apply_onwind_brownfield(n, snakemake)",),
     "scripts/pypsa-at/additional_functionality.py": (
         "constraint_national_co2_budgets(n, snakemake, investment_year)",
     ),

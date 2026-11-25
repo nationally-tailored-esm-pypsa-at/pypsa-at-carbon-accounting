@@ -67,6 +67,26 @@ def carbon_accounting_enabled(config: dict) -> bool:
     return bool(config["mods"]["carbon_accounting"]["enable"])
 
 
+def national_budgets(budgets: dict | None) -> dict:
+    """
+    Return the national CO2 budgets without the countries set to ``null``.
+
+    A scenario cannot delete a country from ``co2_budget_national`` (the
+    scenario overrides are deep-merged), so ``null`` removes its budget.
+
+    Parameters
+    ----------
+    budgets
+        The configuration ``solving.constraints.co2_budget_national``.
+
+    Returns
+    -------
+    :
+        Budget per planning horizon, per country with a budget.
+    """
+    return {ct: budget for ct, budget in (budgets or {}).items() if budget is not None}
+
+
 def constraint_national_co2_budgets_ca(
     n: pypsa.Network, snakemake: Snakemake, investment_year: int
 ) -> None:
@@ -74,7 +94,8 @@ def constraint_national_co2_budgets_ca(
     Add the national CO2 budgets of the carbon accounting.
 
     Same as the PyPSA-AT national budget, which this function replaces,
-    apart from the claims of the carrier-based method:
+    apart from the claims of the carrier-based method and countries whose
+    budget is ``null`` (no constraint, see :func:`national_budgets`):
       - adds CO2 national constraints based on a balance at
         the `co2 atmosphere` bus, so the claim links count with their
         negative efficiency at that bus
@@ -101,9 +122,9 @@ def constraint_national_co2_budgets_ca(
     drift test in ``test/test_carbon_accounting/test_mods/test_budget.py``
     fails when PyPSA-AT changes its budget.
     """
-    national_co2_budgets = snakemake.params.solving["constraints"][
-        "co2_budget_national"
-    ]
+    national_co2_budgets = national_budgets(
+        snakemake.params.solving["constraints"]["co2_budget_national"]
+    )
     logger.info(f"Adding national CO2 budgets to {n.name} for year {investment_year}")
     nhours = n.snapshot_weightings.generators.sum()
     nyears = nhours / 8760
