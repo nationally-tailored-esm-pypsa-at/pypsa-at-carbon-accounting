@@ -40,12 +40,25 @@ DP3_with_national_policy:
       use_technical_potentials: true
 
 DP3_no_national_policy:
-  description: DP3_with_national_policy without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity
+  description: DP3_with_national_policy without country-centred policy and international embedding (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity, TYNDP NTC floors and flow limits, Russian gas block, gas storage override, capacity trajectories
   mods:
     klien_potential_limits:
       use_technical_potentials: true
     net_zero_electricity:
       enable: false
+    # years switches both the NTC floors and the NTC flow limits; the enable
+    # flags only gate the DAG input (the flow-limit flag is not read at all)
+    tyndp_cross_border_flow_limits:
+      enable: false
+    tyndp_lower_bounds:
+      enable: false
+      years: []
+    block_russian_gas_imports:
+      enable: false
+    override_gas_storage_capacities:
+      enable: false
+    trajectories:
+      apply_trajectories: false
   solving:
     constraints:
       co2_budget_national:

@@ -129,10 +129,13 @@ def test_dp_run_differs_from_its_reference_in_one_principle(dp_configs, scenario
     base = dp_configs[DP_REFERENCES.get(scenario, "DP_base")]
     run = dp_configs[scenario]
     expected = DP_DIFFERENCES[scenario]
-    differ = {k for k in base.keys() | run.keys() if base.get(k) != run.get(k)}
+    assert _differing(base, run, expected) == expected
+
+
+def _differing(a: dict, b: dict, expected: set) -> set:
+    differ = {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)}
     # a key set to null drops all leaves below it
-    differ = {next((e for e in expected if k.startswith(f"{e}.")), k) for k in differ}
-    assert differ == expected
+    return {next((e for e in expected if k.startswith(f"{e}.")), k) for k in differ}
 
 
 def test_dp_base_at_nuts3(dp_configs):
@@ -153,6 +156,12 @@ def test_dp3_removes_at_budget_only(dp_configs):
     dp3 = dp_configs["DP3_no_national_policy"]
     assert dp3["solving.constraints.co2_budget_national.AT"] is None
     assert dp3["solving.constraints.co2_budget_national.DE.2030"] is not None
+
+
+def test_dp3_keeps_h2_import_scenario(dp_configs):
+    """No neutral TYNDP H2 import scenario exists, so DP3 keeps the default."""
+    key = "mods.tyndp_h2_import_scenario"
+    assert dp_configs["DP3_no_national_policy"][key] == dp_configs["DP_base"][key]
 
 
 def test_onwind_brownfield_default(config):
