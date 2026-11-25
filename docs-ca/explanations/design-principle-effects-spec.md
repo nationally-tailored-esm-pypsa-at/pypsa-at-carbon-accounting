@@ -16,7 +16,11 @@ principles. Validation is cross-cutting and **not** part of these runs.
 | P3 | Country-centred policy representation and international embedding | all national AT policy constraints |
 
 Design rule (Sec. 3.2): **each comparison differs in one choice only.** Every principle gets a
-pair: `DP_base` (full PyPSA-AT) vs a run without the principle.
+pair: `DP_base` (full PyPSA-AT) vs a run without the principle. Exception P3: the KLIEN scenario
+potentials (climate scenario, year, ambition) hold policy assumptions and would mask the policy
+effect, so the P3 pair is `DP3_with_national_policy` vs `DP3_no_national_policy`, both on the KLIEN
+technical potentials (one config switch, `use_technical_potentials`). `DP3_with_national_policy` vs
+`DP_base` shows the effect of that basis.
 
 ## Common setup
 
@@ -39,8 +43,8 @@ pair: `DP_base` (full PyPSA-AT) vs a run without the principle.
 | `DP_base` | – | – (PyPSA-AT defaults, AT35DE5, Gurobi, technology-based accounting) |
 | `DP1_no_national_data` | P1 | KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`, PyPSA-Eur/ERA5 potentials apply) **and** KLIEN onwind brownfield off (`mods.carbon_accounting.onwind_brownfield.enable: false`, PyPSA-Eur existing onwind capacities apply) |
 | `DP2_at10` | P2 | `mods.modify_nuts3_shapes: AT10DE5`, `clustering.administrative.AT: 2` |
-| `DP3_no_national_policy` | P3 | all national AT policy constraints removed (table below) |
-| `DP3a_no_national_policy_no_klien` | P3 | as `DP3_no_national_policy`, plus KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`); onwind brownfield unchanged. Control run: the KLIEN caps can bind the same AT solar and wind capacities as the policy targets and so mask the P3 effect |
+| `DP3_with_national_policy` | P3 | basis of the P3 pair: `mods.klien_potential_limits.use_technical_potentials: true` (KLIEN technical potentials instead of the scenario potentials; the caps stay on, KLIEN onwind brownfield unchanged) |
+| `DP3_no_national_policy` | P3 | as `DP3_with_national_policy`, **and** all national AT policy constraints removed (table below). Compared with `DP3_with_national_policy`, not with `DP_base` |
 
 `CA_base` (AT10) is not reused as a DP run: if the temporal resolution of the DP runs is
 coarsened, it would differ from `DP_base` in two choices. The DP runs have their own overlay,

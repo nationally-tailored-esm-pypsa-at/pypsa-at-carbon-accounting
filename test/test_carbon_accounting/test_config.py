@@ -12,7 +12,11 @@ import pytest
 import yaml
 from snakemake.utils import update_config
 
-from evals.carbon_accounting.design_principles import DP_DIFFERENCES, flatten
+from evals.carbon_accounting.design_principles import (
+    DP_DIFFERENCES,
+    DP_REFERENCES,
+    flatten,
+)
 from mods.clustering.constants import VALID_CONFIGURATIONS
 from scripts.lib.validation.config import validate_config
 
@@ -121,8 +125,9 @@ def test_dp_runs_are_listed(dp_config):
 
 
 @pytest.mark.parametrize("scenario", DP_DIFFERENCES)
-def test_dp_run_differs_from_base_in_one_principle(dp_configs, scenario):
-    base, run = dp_configs["DP_base"], dp_configs[scenario]
+def test_dp_run_differs_from_its_reference_in_one_principle(dp_configs, scenario):
+    base = dp_configs[DP_REFERENCES.get(scenario, "DP_base")]
+    run = dp_configs[scenario]
     expected = DP_DIFFERENCES[scenario]
     differ = {k for k in base.keys() | run.keys() if base.get(k) != run.get(k)}
     # a key set to null drops all leaves below it
@@ -134,6 +139,14 @@ def test_dp_base_at_nuts3(dp_configs):
     assert dp_configs["DP_base"]["mods.modify_nuts3_shapes"] == "AT35DE5"
     assert dp_configs["DP_base"]["clustering.administrative.AT"] == 3
     assert dp_configs["DP_base"]["mods.carbon_accounting.method"] == "technology"
+
+
+def test_dp3_pair_shares_technical_potentials(dp_configs):
+    key = "mods.klien_potential_limits.use_technical_potentials"
+    assert dp_configs["DP_base"][key] is False
+    for scenario in ("DP3_with_national_policy", "DP3_no_national_policy"):
+        assert dp_configs[scenario][key] is True
+    assert DP_REFERENCES["DP3_no_national_policy"] == "DP3_with_national_policy"
 
 
 def test_dp3_removes_at_budget_only(dp_configs):

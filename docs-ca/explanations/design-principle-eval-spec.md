@@ -40,7 +40,7 @@ The notebook answers one question per principle, in order.
 | A Data (P1) | `DP1` vs `DP_base`: wind and solar potentials and production in AT; does the potential make a difference, is the cap binding? |
 | B Resolution (P2) | `DP2` vs `DP_base`: capacities per NUTS 2 region (AT35 summed to NUTS 2). |
 | B ii Transmission (P2) | Total (gross, not net) transmission inside AT. |
-| C Policy (P3) | `DP3` vs `DP_base`: are the policy goals binding, what changes without them, which other constraints bind the same elements then? |
+| C Policy (P3) | `DP3_no_national_policy` vs `DP3_with_national_policy` (both on KLIEN technical potentials): are the policy goals binding, what changes without them, which other constraints bind the same elements then? |
 | 4 Binding constraints | Duals of all global constraints and binding potential caps (general overview). |
 | 5 Cost in AT | `country_cost` per scenario and horizon, split by component group, Δ vs reference. |
 
@@ -110,11 +110,11 @@ Answer: Δ capacity and Δ production `DP1 − DP_base`; binding buses in each r
 
 ## (C) Policy: are the policy goals binding, and what replaces them? (P3)
 
-1. **Binding in `DP_base`:** `constant`, achieved value and `mu` of each AT policy constraint
+1. **Binding in `DP3_with_national_policy`:** `constant`, achieved value and `mu` of each AT policy constraint
    per horizon: `co2_limit-AT`, `production_limit_lower-{solar,wind,hydro,biomass}-AT`,
    `capacity_minimum-AT-Link-H2-Electrolysis`, `net-zero-electricity-production-AT`,
    `green-gas-production-AT`, `green-h2-production-AT`. Binding: `|mu| > 1e-3`.
-2. **Without them (`DP3`):** Δ of the elements each constraint acts on, `DP3 − DP_base`: AT CO2
+2. **Without them (`DP3`):** Δ of the elements each constraint acts on, `DP3_no − DP3_with`: AT CO2
    emissions (vs the budget of `DP_base`), RE production per group (vs the EAG targets),
    electrolysis capacity (vs 1 GW), AT electricity balance (production − consumption), green
    gas and green H2 production, AT net imports of electricity, H2, methane, liquids.

@@ -21,9 +21,8 @@ run:
   - DP_base
   - DP1_no_national_data
   - DP2_at10
+  - DP3_with_national_policy
   - DP3_no_national_policy
-  - DP3a_with_national_policy_no_klien
-  - DP3a_no_national_policy_no_klien
   scenarios:
     enable: true
     file: config/scenarios.design-principles.yaml

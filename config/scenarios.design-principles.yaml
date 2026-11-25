@@ -27,49 +27,25 @@ DP2_at10:
   mods:
     modify_nuts3_shapes: AT10DE5
 
-DP3_no_national_policy:
-  description: DP_base without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity
+# P3 pair: both runs use the KLIEN technical potentials, because the KLIEN scenario
+# potentials (climate scenario, year, ambition) carry national policy assumptions
+# themselves and would mask the policy effect. Switch the basis for both runs at once
+# via mods.klien_potential_limits.use_technical_potentials (false: scenario potentials
+# as in DP_base). KLIEN onwind brownfield and all other settings stay as in DP_base.
+# DP3_no_national_policy is compared with DP3_with_national_policy, not with DP_base.
+DP3_with_national_policy:
+  description: DP_base with KLIEN technical potentials instead of scenario potentials - basis for comparison with DP3_no_national_policy (P3)
   mods:
+    klien_potential_limits:
+      use_technical_potentials: true
+
+DP3_no_national_policy:
+  description: DP3_with_national_policy without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity
+  mods:
+    klien_potential_limits:
+      use_technical_potentials: true
     net_zero_electricity:
       enable: false
-  solving:
-    constraints:
-      co2_budget_national:
-        # null (empty): no national CO2 budget for AT, DE unchanged
-        AT:
-      limits_volume_min:
-        solar:
-          AT:
-            2030: 0
-        wind:
-          AT:
-            2030: 0
-        hydro:
-          AT:
-            2030: 0
-        biomass:
-          AT:
-            2030: 0
-      limits_capacity_min:
-        Link:
-          H2 Electrolysis:
-            AT:
-              2030: 0
-              2040: 0
-              2050: 0
-
-DP3a_with_national_policy_no_klien:
-  description: DP3_with_national_policy without KLIEN potential caps - acts as a basis for comparison with DP3a_no_national_policy_no_klien (P3); onwind brownfield unchanged
-  mods:
-    klien_potential_limits:
-      technologies: []
-
-
-DP3a_no_national_policy_no_klien:
-  description: DP3_no_national_policy without KLIEN potential caps - tests whether the KLIEN caps mask the policy effect (P3); onwind brownfield unchanged
-  mods:
-    klien_potential_limits:
-      technologies: []
   solving:
     constraints:
       co2_budget_national:

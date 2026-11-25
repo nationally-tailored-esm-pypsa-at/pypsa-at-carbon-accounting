@@ -345,7 +345,7 @@ def _(horizons, mo, others):
 
     a_select = other_select("DP1")
     b_select = other_select("DP2")
-    c_select = other_select("DP3")
+    c_select = other_select("DP3_no")
     horizon_select = mo.ui.dropdown(
         options=horizons, value=horizons[-1], label="Horizon"
     )
@@ -531,17 +531,16 @@ def _(
     table,
 ):
     _other = c_select.value
-    _runs = [reference, _other]
-    _status = per_pair("policy_status", reference, _other, country, reference)
+    _ref = dp.DP_REFERENCES.get(_other, reference)
+    _runs = [_ref, _other]
+    _status = per_pair("policy_status", _ref, _other, country, _ref)
     _attain = dp.policy_attainment(_status, country)
     _attain = _attain[_attain.groupby("label").value.transform("count") > 0]
-    _supply = per_pair("energy_supply_table", reference, _other, country)
+    _supply = per_pair("energy_supply_table", _ref, _other, country)
     _outcomes = dp.add_deltas(
-        per_pair("policy_outcomes", reference, _other, country, reference), reference
+        per_pair("policy_outcomes", _ref, _other, country, _ref), _ref
     )
-    _replace = per_pair(
-        "replacement_table", reference, _other, country, reference, _other
-    )
+    _replace = per_pair("replacement_table", _ref, _other, country, _ref, _other)
 
     # C1: one panel per policy, value of both runs against the reference target
     _labels = list(dict.fromkeys(_attain.label))
@@ -558,12 +557,12 @@ def _(
     for _i, _label in enumerate(_labels):
         _row, _col = _i // _cols + 1, _i % _cols + 1
         _p = _attain[_attain.label == _label]
-        _t = _p[_p.scenario == reference]
+        _t = _p[_p.scenario == _ref]
         _goal.add_trace(
             go.Scatter(
                 x=_t.horizon,
                 y=_t.target,
-                name=f"target ({reference})",
+                name=f"target ({_ref})",
                 legendgroup="target",
                 showlegend=_i == 0,
                 mode="lines+markers",
@@ -673,7 +672,7 @@ def _(
             mo.md(
                 "## C Policy (P3): are the policy goals binding, and what replaces "
                 "them?\n\n"
-                f"Compares {reference} (national policies) with the selected run "
+                f"Compares {_ref} (national policies) with the selected run "
                 "(none). The policies act on the national build-up; without them the "
                 "model may meet the same demand from abroad instead."
             ),
@@ -681,8 +680,8 @@ def _(
             mo.md(
                 "**C1 Target attainment.** One panel per national policy constraint: "
                 "its value (the constraint expression re-evaluated on the solved "
-                f"network, with the formulas of {reference}) and the target "
-                f"(constant of {reference}). Filled marker: the constraint binds "
+                f"network, with the formulas of {_ref}) and the target "
+                f"(constant of {_ref}). Filled marker: the constraint binds "
                 "(`|mu| > 1e-3`); a run without it has open markers. A line of the "
                 "run below the target (above, for the CO2 budget) means it misses "
                 "the policy goal."

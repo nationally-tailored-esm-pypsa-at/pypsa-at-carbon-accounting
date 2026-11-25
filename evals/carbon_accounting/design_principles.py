@@ -45,7 +45,7 @@ GW = 1e3  # MW per GW
 TOLERANCE = 0.999  # share of a bound at which it counts as reached
 MU_TOLERANCE = 1e-3  # |mu| above which a global constraint binds
 
-# keys in which each design-principle run differs from DP_base, see
+# keys in which each design-principle run differs from its reference run, see
 # docs-ca/explanations/design-principle-effects-spec.md
 DP_DIFFERENCES: dict[str, set[str]] = {
     "DP1_no_national_data": {
@@ -53,6 +53,10 @@ DP_DIFFERENCES: dict[str, set[str]] = {
         "mods.carbon_accounting.onwind_brownfield.enable",
     },
     "DP2_at10": {"mods.modify_nuts3_shapes", "clustering.administrative.AT"},
+    # basis of the P3 pair: KLIEN technical potentials instead of scenario potentials
+    "DP3_with_national_policy": {
+        "mods.klien_potential_limits.use_technical_potentials"
+    },
     "DP3_no_national_policy": {
         "solving.constraints.co2_budget_national.AT",
         "solving.constraints.limits_volume_min.solar.AT.2030",
@@ -65,10 +69,10 @@ DP_DIFFERENCES: dict[str, set[str]] = {
         "mods.net_zero_electricity.enable",
     },
 }
-# DP3 plus the KLIEN potential caps off: shows whether the caps mask the policy effect
-DP_DIFFERENCES["DP3a_no_national_policy_no_klien"] = DP_DIFFERENCES[
-    "DP3_no_national_policy"
-] | {"mods.klien_potential_limits.technologies"}
+# runs that are compared with another run than ``REFERENCE`` (one choice apart)
+DP_REFERENCES: dict[str, str] = {
+    "DP3_no_national_policy": "DP3_with_national_policy",
+}
 # config keys that differ between every pair of runs; ``resources`` is input data
 # provenance written by the workflow, not configuration
 IGNORED_KEYS: tuple[str, ...] = ("run", "wildcards", "description", "resources")
@@ -346,11 +350,23 @@ def checks(
         )
     )
 
-    ref_meta = read_meta(next(iter(files[reference].values())))
     rows = []
     for scenario in networks:
         if scenario == reference:
             continue
+        # a run is compared with its own reference, e.g. the P3 pair
+        ref = DP_REFERENCES.get(scenario, reference)
+        if ref not in files:
+            rows.append(
+                {
+                    "scenario": scenario,
+                    "expected": f"reference {ref} not loaded",
+                    "unexpected": "",
+                    "missing": "",
+                }
+            )
+            continue
+        ref_meta = read_meta(next(iter(files[ref].values())))
         expected = DP_DIFFERENCES.get(scenario)
         meta = read_meta(next(iter(files[scenario].values())))
         found = config_diff(meta, ref_meta, expected or set())
@@ -364,15 +380,19 @@ def checks(
         )
     diff = pd.DataFrame(rows).set_index("scenario") if rows else pd.DataFrame()
     bad = diff[(diff.unexpected != "") | (diff.missing != "")] if rows else diff
-    unknown = diff[diff.expected == "unknown run"] if rows else diff
+    unknown = (
+        diff[diff.expected.str.startswith(("unknown run", "reference "))]
+        if rows
+        else diff
+    )
     status = "fail" if len(bad) else "warn" if len(unknown) else "ok"
     results.append(
         Check(
             "Config diff",
             status,
-            f"{len(bad)} runs differ from {reference} in other keys than expected"
+            f"{len(bad)} runs differ from their reference in other keys than expected"
             if len(bad)
-            else f"every run differs from {reference} only in its principle"
+            else "every run differs from its reference only in its principle"
             + (f" ({len(unknown)} runs without expected keys)" if len(unknown) else ""),
             diff,
         )
@@ -380,7 +400,8 @@ def checks(
 
     rows = []
     for scenario, nets in networks.items():
-        if scenario not in DP_DIFFERENCES or "P3" not in _principle(scenario):
+        # only the run without policies; its pair keeps them
+        if scenario not in DP_REFERENCES or "P3" not in _principle(scenario):
             continue
         for horizon, n in nets.items():
             names = [c.format(ct=country) for c in POLICY_CONSTRAINTS]
