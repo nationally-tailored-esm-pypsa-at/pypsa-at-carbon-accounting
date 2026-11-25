@@ -90,7 +90,7 @@ Answer: Δ capacity and Δ production `DP1 − DP_base`; binding buses in each r
   changes how much is built) and **regional shift** `Σ_regions |Δ| / AT total of DP_base`
   (resolution changes where it is built).
 - Region of a bus: `n.buses.location` (sector buses such as `AT111 urban central heat` sit at
-  `AT111`); heat pumps by electric input (`p_nom_opt`), other links by output capacity.
+  `AT111`); all links by input capacity (`p_nom_opt`, `bus0`).
 
 ## (B ii) Total transmission inside AT (P2)
 
