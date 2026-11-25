@@ -83,7 +83,7 @@ Answer: Δ capacity and Δ production `DP1 − DP_base`; binding buses in each r
 - `DP_base` capacities summed per NUTS 2 region vs `DP2_at10` per region, for **every** AT NUTS 2
   region, all horizons.
 - Technologies: generators by carrier group (onwind, ground PV, rooftop PV, ror, hydro), links by
-  output capacity (electrolysis, gas power, heat pumps, CHP), batteries (store `e_nom_opt`).
+  input capacity (`p_nom_opt`; electrolysis, gas power, heat pumps, CHP), hydro and PHS turbines (storage units), batteries (store `e_nom_opt`).
 - Table region × technology × horizon with `DP_base`, `DP2`, Δ and Δ %; figure: grouped bars per
   region.
 - Two numbers per technology and horizon separate the effects: **AT total Δ** (resolution
