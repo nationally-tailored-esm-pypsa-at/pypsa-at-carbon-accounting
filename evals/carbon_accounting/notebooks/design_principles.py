@@ -150,26 +150,38 @@ def _(PALETTE, ca, dp, mo, root_input):
 
 
 @app.cell
-def _(ca, dp, mo, paths):
+def _(ca, dp, files, mo, paths):
+    def stamp(scenario: str) -> tuple:
+        """Return the files of a scenario with size and mtime, the cache key."""
+        return tuple(
+            (str(p), p.stat().st_size, p.stat().st_mtime_ns)
+            for p in files[scenario].values()
+        )
+
     @mo.cache
-    def load(path: str) -> dict:
-        """Load the solved networks of one scenario, once."""
+    def load(path: str, state: tuple) -> dict:
+        """Load the solved networks of one scenario, once per file state."""
         return ca.load_networks(path)
 
     def networks(scenarios) -> dict:
-        return {s: load(paths[s]) for s in scenarios}
+        return {s: load(paths[s], stamp(s)) for s in scenarios}
 
     @mo.cache
-    def per_scenario(name: str, scenario: str, country: str):
+    def per_scenario(name: str, scenario: str, country: str, state: tuple):
         """Apply a per-run function of ``dp`` to one scenario, once."""
         return getattr(dp, name)(networks([scenario]), country)
 
     @mo.cache
-    def per_pair(name: str, reference: str, other: str, country: str, *args):
+    def cached_pair(name: str, reference: str, other: str, country: str, states, *args):
         """Apply a function of ``dp`` to the reference and one run, once."""
         return getattr(dp, name)(networks([reference, other]), country, *args)
 
-    return networks, per_pair, per_scenario
+    def pair(name: str, reference: str, other: str, country: str, *args):
+        """Call :func:`cached_pair` keyed by the file state of both runs."""
+        states = (stamp(reference), stamp(other))
+        return cached_pair(name, reference, other, country, states, *args)
+
+    return networks, pair, per_scenario, stamp
 
 
 @app.cell(expand_output=True)
@@ -236,14 +248,14 @@ def _(
 
 
 @app.cell
-def _(checked, country, mo, pd, per_scenario, selected):
+def _(checked, country, mo, pd, per_scenario, selected, stamp):
     assert checked
     _frames = {}
     for _scenario in mo.status.progress_bar(
         selected, title="Evaluating scenarios", remove_on_exit=True
     ):
         _frames[_scenario] = {
-            name: per_scenario(name, _scenario, country)
+            name: per_scenario(name, _scenario, country, stamp(_scenario))
             for name in (
                 "global_constraints",
                 "costs",
@@ -274,15 +286,19 @@ def _(constraints, dp, group_select, layout, mo, px, table):
     _group = None if group_select.value == "all" else group_select.value
     _mu = dp.binding_matrix(constraints, _group)
     _shown = constraints if _group is None else constraints[constraints.group == _group]
-    _heat = px.imshow(
-        _mu.set_axis([f"{s} {h}" for s, h in _mu.columns], axis=1),
-        color_continuous_scale="RdBu",
-        color_continuous_midpoint=0,
-        aspect="auto",
-        text_auto=".3g",
-    )
-    layout(_heat, "Duals of the binding constraints (mu)", "")
-    _heat.update_layout(height=max(300, 40 * len(_mu) + 120))
+    if len(_mu):
+        _heat = px.imshow(
+            _mu.set_axis([f"{s} {h}" for s, h in _mu.columns], axis=1),
+            color_continuous_scale="RdBu",
+            color_continuous_midpoint=0,
+            aspect="auto",
+            text_auto=".3g",
+        )
+        layout(_heat, "Duals of the binding constraints (mu)", "")
+        _heat.update_layout(height=max(300, 40 * len(_mu) + 120))
+        _plot = mo.ui.plotly(_heat)
+    else:
+        _plot = mo.md("No binding constraint.")
     mo.vstack(
         [
             mo.md(
@@ -292,7 +308,7 @@ def _(constraints, dp, group_select, layout, mo, px, table):
                 "(`p_nom_max`) have no stored dual; see A."
             ),
             group_select,
-            mo.ui.plotly(_heat) if len(_mu) else mo.md("No binding constraint."),
+            _plot,
             mo.accordion(
                 {
                     "All constraints": table(
@@ -338,10 +354,9 @@ def _(colours, cost, dp, go, layout, mo, others, reference, table):
 @app.cell
 def _(horizons, mo, others):
     def other_select(default: str, label: str = "Run"):
+        # only the run of the panel's principle; no substitute from another one
         value = next((s for s in others if s.startswith(default)), None)
-        return mo.ui.dropdown(
-            options=others, value=value or (others[0] if others else None), label=label
-        )
+        return mo.ui.dropdown(options=others, value=value, label=label)
 
     a_select = other_select("DP1")
     b_select = other_select("DP2")
@@ -353,9 +368,13 @@ def _(horizons, mo, others):
 
 
 @app.cell(expand_output=True)
-def _(a_select, colours, go, layout, mo, potential, reference, table):
+def _(a_select, colours, dp, go, layout, mo, potential, reference, table):
+    mo.stop(
+        a_select.value is None,
+        mo.vstack([mo.md("## A Data (P1)"), mo.md("Select a P1 run."), a_select]),
+    )
     _runs = [reference, a_select.value]
-    _rows = potential.loc[_runs]
+    _rows = dp.add_deltas(potential, reference, ["capacity", "production"]).loc[_runs]
     _fig = go.Figure()
     for _scenario in _runs:
         _r = _rows.xs(_scenario, level="scenario").reset_index()
@@ -404,6 +423,10 @@ def _(a_select, colours, go, layout, mo, potential, reference, table):
             a_select,
             mo.ui.plotly(_fig),
             mo.ui.plotly(_prod),
+            mo.md(
+                "`Δ capacity` (GW) and `Δ production` (TWh) are the run minus "
+                f"{reference} (zero for the reference)."
+            ),
             table(_rows),
         ]
     )
@@ -411,8 +434,12 @@ def _(a_select, colours, go, layout, mo, potential, reference, table):
 
 
 @app.cell
-def _(b_select, country, dp, mo, per_pair, reference):
-    regional = per_pair(
+def _(b_select, country, dp, mo, pair, reference):
+    mo.stop(
+        b_select.value is None,
+        mo.vstack([mo.md("## B Resolution (P2)"), mo.md("Select a P2 run."), b_select]),
+    )
+    regional = pair(
         "regional_comparison",
         reference,
         b_select.value,
@@ -443,6 +470,7 @@ def _(
     table,
     technology_select,
 ):
+    mo.stop(b_select.value is None)
     _rows = regional.xs(
         (horizon_select.value, technology_select.value),
         level=["horizon", "technology"],
@@ -483,6 +511,7 @@ def _(
 
 @app.cell(expand_output=True)
 def _(b_select, colours, go, grid, layout, mo, reference, table):
+    mo.stop(b_select.value is None)
     _runs = [reference, b_select.value]
     _rows = grid.loc[_runs]
     _fig = go.Figure()
@@ -526,21 +555,25 @@ def _(
     go,
     make_subplots,
     mo,
-    per_pair,
+    pair,
     reference,
     table,
 ):
+    mo.stop(
+        c_select.value is None,
+        mo.vstack([mo.md("## C Policy (P3)"), mo.md("Select a P3 run."), c_select]),
+    )
     _other = c_select.value
     _ref = dp.DP_REFERENCES.get(_other, reference)
     _runs = [_ref, _other]
-    _status = per_pair("policy_status", _ref, _other, country, _ref)
+    _status = pair("policy_status", _ref, _other, country, _ref)
     _attain = dp.policy_attainment(_status, country)
     _attain = _attain[_attain.groupby("label").value.transform("count") > 0]
-    _supply = per_pair("energy_supply_table", _ref, _other, country)
+    _supply = pair("energy_supply_table", _ref, _other, country)
     _outcomes = dp.add_deltas(
-        per_pair("policy_outcomes", _ref, _other, country, _ref), _ref
+        pair("policy_outcomes", _ref, _other, country, _ref), _ref
     )
-    _replace = per_pair("replacement_table", _ref, _other, country, _ref, _other)
+    _replace = pair("replacement_table", _ref, _other, country, _ref, _other)
 
     # C1: one panel per policy, value of both runs against the reference target
     _labels = list(dict.fromkeys(_attain.label))

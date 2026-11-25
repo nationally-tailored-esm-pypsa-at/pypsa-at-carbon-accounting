@@ -285,6 +285,13 @@ class TestPolicyMirror:
         assert fixed == pytest.approx(solved_policy.global_constraints.constant[name])
 
     def test_green_gas(self, solved_policy):
+        # the value is binding at zero in the toy, so check the terms separately:
+        # green production (biogas to gas) minus gas burnt for electricity (OCGT)
+        n, w = solved_policy, solved_policy.snapshot_weightings.generators
+        produced = n.links_t.p0["AT1 biogas to gas"].mul(w).sum()
+        burnt = n.links_t.p0["AT1 OCGT"].mul(w).sum()
+        assert produced > 1e-3
+        assert dp.green_gas(n, "AT") == pytest.approx(produced - burnt, abs=1e-6)
         assert dp.green_gas(solved_policy, "AT") == pytest.approx(
             _solver_value(solved_policy, "green-gas-production-AT"), rel=1e-6, abs=1e-6
         )
@@ -461,6 +468,20 @@ class TestRegions:
         assert shift["Δ total"] == pytest.approx(-0.4)
         assert shift["shift"] == pytest.approx(0.6 / 3.5)
 
+    def test_storage_unit_turbines_counted(self):
+        n = _regional_network({"AT111": 1000})
+        n.add("StorageUnit", "AT111 PHS", bus="AT111", carrier="PHS")
+        n.storage_units.loc["AT111 PHS", "p_nom_opt"] = 4000
+        out = dp.regional_capacities(n, "AT")
+        assert out[("AT11", "hydro turbine")] == pytest.approx(4.0)
+        assert out[("AT11", "onwind")] == pytest.approx(1.0)
+
+    def test_missing_horizon_is_skipped(self):
+        a, b = _regional_network({"AT11": 1000}), _regional_network({"AT11": 2000})
+        networks = {"x": {"2030": a, "2040": a}, "y": {"2030": b}}
+        out = dp.regional_comparison(networks, "AT", "x", "y")
+        assert set(out.index.unique("horizon")) == {"2030"}
+
 
 # --- (B ii) transmission -------------------------------------------------------
 
@@ -505,6 +526,18 @@ class TestTransmission:
 
     def test_foreign_branches_left_out(self, table):
         assert table.branches[("AC", "all")] == 2
+
+    def test_line_and_link_with_the_same_name_both_count(self):
+        n = build_transmission_network()
+        n.add(
+            "Link", "inside", bus0="AT111", bus1="AT112", carrier="DC", p_nom=10,
+            length=10,
+        )  # fmt: skip
+        n.links["p_nom_opt"] = 10.0
+        n.links_t.p0 = pd.DataFrame({"inside": [1.0, 1.0]}, index=n.snapshots)
+        table = dp.transmission(n, "AT")
+        assert table.energy[("AC", "all")] == pytest.approx((10 + 18) * 3 / dp.TWH)
+        assert table.energy[("DC", "all")] == pytest.approx(2 * 3 / dp.TWH)
 
 
 # --- (C) policy elements -------------------------------------------------------

@@ -1,6 +1,6 @@
 # Specification: Design-Principle Effect Runs (manuscript Sec. 3.2.1 / 4.1)
 
-Status: **spec agreed 2026-11-22, implemented 2026-11-22, own overlay 2026-11-23 (runs pending).** Scope: model runs only. The evaluation
+Status: **spec agreed 2026-11-22, implemented 2026-11-22, own overlay 2026-11-23, DP3 widened to all of P3 2026-11-23 (runs pending).** Scope: model runs only. The evaluation
 (metrics, figures) is work in progress and not part of this spec.
 
 ## Goal
@@ -13,7 +13,7 @@ principles. Validation is cross-cutting and **not** part of these runs.
 |---|---|---|
 | P1 | Integration of country-specific data | KLIEN renewable potentials and KLIEN existing onshore-wind capacities for AT |
 | P2 | Adequate spatial (and temporal) granularity | AT at NUTS 3 (AT35) vs NUTS 2 (AT10) |
-| P3 | Country-centred policy representation and international embedding | all national AT policy constraints |
+| P3 | Country-centred policy representation and international embedding | national AT policy targets **and** the international embedding and national settings (TYNDP grid, gas import routes, gas storage, capacity trajectories) |
 
 Design rule (Sec. 3.2): **each comparison differs in one choice only.** Every principle gets a
 pair: `DP_base` (full PyPSA-AT) vs a run without the principle. Exception P3: the KLIEN scenario
@@ -44,13 +44,21 @@ technical potentials (one config switch, `use_technical_potentials`). `DP3_with_
 | `DP1_no_national_data` | P1 | KLIEN potential caps off (`mods.klien_potential_limits.technologies: []`, PyPSA-Eur/ERA5 potentials apply) **and** KLIEN onwind brownfield off (`mods.carbon_accounting.onwind_brownfield.enable: false`, PyPSA-Eur existing onwind capacities apply) |
 | `DP2_at10` | P2 | `mods.modify_nuts3_shapes: AT10DE5`, `clustering.administrative.AT: 2` |
 | `DP3_with_national_policy` | P3 | basis of the P3 pair: `mods.klien_potential_limits.use_technical_potentials: true` (KLIEN technical potentials instead of the scenario potentials; the caps stay on, KLIEN onwind brownfield unchanged) |
-| `DP3_no_national_policy` | P3 | as `DP3_with_national_policy`, **and** all national AT policy constraints removed (table below). Compared with `DP3_with_national_policy`, not with `DP_base` |
+| `DP3_no_national_policy` | P3 | as `DP3_with_national_policy`, **and** national policy targets, international embedding and national settings removed (tables below). Compared with `DP3_with_national_policy`, not with `DP_base` |
 
 `CA_base` (AT10) is not reused as a DP run: if the temporal resolution of the DP runs is
 coarsened, it would differ from `DP_base` in two choices. The DP runs have their own overlay,
 so changes to the reduced carbon accounting setup never reach them.
 
-### DP3: national AT policies removed
+### DP3: country-centred policy and international embedding removed
+
+Review 2026-11-23: a DP3 with the national targets only tests "national targets", not
+"country-centred policy and international embedding". Sec. 2.2 also puts national technology
+trajectories and physically plausible import/export under P3, and Sec. 3.1.2 the fixed gas
+storage and the TYNDP flows. Decided: `DP3_no_national_policy` removes all of P3 in one run.
+The target and the embedding effects are therefore not separated.
+
+#### National policy targets
 
 | Policy | Config key | In `DP3_no_national_policy` |
 |---|---|---|
@@ -108,6 +116,10 @@ Not changed (kept in `DP3_no_national_policy`): `mods.block_russian_gas_imports`
 4. **Dry run** with `--configfile config/config.design-principles.yaml` resolves 16 compose and
    16 solve jobs (4 scenarios × 4 horizons). `test/test_carbon_accounting/test_config.py` checks
    that each DP run differs from `DP_base` only in the keys of the run table.
+5. **Widened DP3 (2026-11-23).** Scenario keys of the embedding table added; the config test lists
+   them and checks that the H2 import scenario is kept. The gas grid freeze was switched off at
+   first (threshold `2024`) and reverted after the test run on 2026-11-23 (see the notes above).
+   The local test run below predates this change.
 
 ## Local test run (2026-11-22)
 
@@ -127,7 +139,8 @@ EAG and electrolysis limits have zero duals. Caveats for the production runs:
 - Solve on the cluster; no full local runs.
 - Sanity checks in `evals/` (understanding only): solved to optimality for all horizons; 35 AT buses
   in all runs but `DP2_at10`; no KLIEN caps and PyPSA-Eur onwind brownfield in AT in `DP1`; no AT
-  CO2 budget and no EAG/electrolysis/net-zero-electricity constraints in `DP3`.
+  CO2 budget, no EAG/electrolysis/net-zero-electricity constraints, no `tyndp_ntc_flow_*`
+  constraints, no Russian gas block and no generic trajectory constraints in `DP3`.
 - Acceptance: each pair differs only in the keys listed above (diff of the resolved configs in
   `results/design-principles/<scenario>/configs/`).
 

@@ -104,6 +104,10 @@ GENERATOR_TECHNOLOGIES: dict[str, tuple[str, ...]] = {
     **POTENTIAL_GROUPS,
     "hydro inflow": ("hydro inflow", "PHS inflow"),
 }
+# StorageUnit carriers, reported by turbine power (``p_nom_opt``)
+STORAGE_UNIT_TECHNOLOGIES: dict[str, tuple[str, ...]] = {
+    "hydro turbine": ("hydro", "PHS"),
+}
 LINK_TECHNOLOGIES: dict[str, str] = {
     "electrolysis": r"^H2 Electrolysis$",
     "gas power": r"^(?:OCGT|CCGT)$",
@@ -245,7 +249,7 @@ def _in_country(n: pypsa.Network, buses: pd.Series, country: str) -> pd.Series:
 # --- (1) checks ----------------------------------------------------------------
 
 
-def flatten(d: dict, prefix: str = "") -> dict:
+def flatten(d: dict, prefix: str = "") -> dict[str, object]:
     """Return the leaves of a nested dict, keyed by their dotted path."""
     flat = {}
     for key, value in d.items():
@@ -257,7 +261,11 @@ def flatten(d: dict, prefix: str = "") -> dict:
     return flat
 
 
-def config_diff(meta: dict, reference: dict, expected: set[str] = frozenset()) -> set:
+def config_diff(
+    meta: dict[str, object],
+    reference: dict[str, object],
+    expected: set[str] | frozenset[str] = frozenset(),
+) -> set[str]:
     """
     Return the config keys in which a run differs from the reference.
 
@@ -281,7 +289,7 @@ def config_diff(meta: dict, reference: dict, expected: set[str] = frozenset()) -
     return {next((e for e in expected if k.startswith(f"{e}.")), k) for k in differ}
 
 
-def _same(a, b) -> bool:
+def _same(a: object, b: object) -> bool:
     """Whether two config values are equal, NaN equal to NaN."""
     if isinstance(a, float) and isinstance(b, float) and np.isnan(a) and np.isnan(b):
         return True
@@ -417,7 +425,11 @@ def checks(
             present = n.global_constraints.reindex(names).dropna(subset=["sense"])
             active = present[present.constant.abs() > 0]
             active = active[~active.index.str.startswith(("green-", "net-zero"))]
-            # zero limits stay in the network, non-binding
+            # zero limits stay in the network, non-binding; a CO2 budget of zero
+            # is no such limit, it forces zero emissions
+            budget = f"co2_limit-{country}"
+            if budget in present.index:
+                active = pd.concat([active, present.loc[[budget]]])
             rows.append(
                 {
                     "scenario": scenario,
@@ -675,8 +687,9 @@ def regional_capacities(n: pypsa.Network, country: str, level: int = 2) -> pd.Se
     """
     Return capacities per NUTS region and technology.
 
-    Generators and links by ``p_nom_opt`` (links at their input, heat pumps
-    by their nominal power), stores by ``e_nom_opt``. A component lies in the
+    Generators, storage units (hydro and pumped hydro turbines, apart from the
+    inflow generators) and links by ``p_nom_opt`` (links at their input, heat
+    pumps by their nominal power), stores by ``e_nom_opt``. A component lies in the
     region of its bus (``bus0`` for links).
 
     Parameters
@@ -703,6 +716,9 @@ def regional_capacities(n: pypsa.Network, country: str, level: int = 2) -> pd.Se
     for technology, pattern in LINK_TECHNOLOGIES.items():
         link = n.links[n.links.carrier.str.contains(pattern)]
         parts.append(_by_region(link.p_nom_opt, link.bus0.map(regions), technology))
+    for technology, carriers in STORAGE_UNIT_TECHNOLOGIES.items():
+        u = n.storage_units[n.storage_units.carrier.isin(carriers)]
+        parts.append(_by_region(u.p_nom_opt, u.bus.map(regions), technology))
     for technology, carriers in STORE_TECHNOLOGIES.items():
         s = n.stores[n.stores.carrier.isin(carriers)]
         parts.append(_by_region(s.e_nom_opt, s.bus.map(regions), technology))
@@ -747,7 +763,8 @@ def regional_comparison(
         count as zero.
     """
     frames = {}
-    for horizon in networks[reference]:
+    # horizons missing in one run are skipped, the checks report them
+    for horizon in sorted(networks[reference].keys() & networks[other].keys()):
         a = regional_capacities(networks[reference][horizon], country, level)
         b = regional_capacities(networks[other][horizon], country, level)
         frame = pd.concat({"reference": a, "other": b}, axis=1).fillna(0.0)
@@ -850,15 +867,21 @@ def transmission(n: pypsa.Network, country: str, level: int = 2) -> pd.DataFrame
     """
     branches = _branches(n, country, level)
     weights = n.snapshot_weightings.generators
+    # a Line and a Link may share a name: key every branch by component and name
     flows = pd.concat(
-        [
-            n.lines_t.p0.reindex(columns=branches.index[branches.component == "Line"]),
-            n.links_t.p0.reindex(columns=branches.index[branches.component == "Link"]),
-        ],
+        {
+            "Line": n.lines_t.p0.reindex(
+                columns=branches.index[branches.component == "Line"]
+            ),
+            "Link": n.links_t.p0.reindex(
+                columns=branches.index[branches.component == "Link"]
+            ),
+        },
         axis=1,
     ).fillna(0.0)
-    flows = flows.loc[:, ~flows.columns.duplicated()].abs()
-    branches = branches[~branches.index.duplicated()]
+    flows.columns = flows.columns.map("/".join)
+    flows = flows.abs()
+    branches.index = branches.component + "/" + branches.index.astype(str)
     limit = (branches.nom_opt * branches.max_pu).where(lambda s: s > 0)
     loading = flows.div(limit)
     branches["energy"] = flows.mul(weights, axis=0).sum()
@@ -1239,6 +1262,8 @@ def policy_status(networks: Networks, country: str, reference: str) -> pd.DataFr
     frames = {}
     for scenario, horizons in networks.items():
         for horizon, n in horizons.items():
+            if horizon not in networks[reference]:
+                continue  # no target without the reference horizon
             ref_network = networks[reference][horizon]
             ref = ref_network.global_constraints
             eag = ref_network.meta["mods"]["net_zero_electricity"]["enable"]
@@ -1272,17 +1297,21 @@ def net_imports(n: pypsa.Network, country: str) -> pd.Series:
     with a port abroad (``co2 atmosphere``, EU copper plates) are no trade.
     """
     flows = port_flows(n)
-    branches = flows[flows.component.isin(["Line", "Link"])]
+    branches = flows[flows.component.isin(["Line", "Link"])].copy()
+    # a Line and a Link may share a name: identify a branch by both
+    branches["branch"] = branches.component + "/" + branches.name
     bus0_carrier = branches.name.map(n.links.bus0.map(n.buses.carrier))
     branches = branches[
         (branches.component == "Line") | (bus0_carrier == branches.bus_carrier)
     ]
-    countries = branches.groupby("name").bus_country.agg(set)
+    countries = branches.groupby("branch").bus_country.agg(set)
     crossing = countries.index[
         countries.map(lambda c: country in c and len(c - {"", country}) > 0)
+        .astype(bool)
+        .to_numpy()
     ]
     at_port = branches[
-        branches.name.isin(crossing)
+        branches.branch.isin(crossing)
         & (branches.bus_country == country)
         & ~branches.bus_carrier.isin(NON_TRADE_BUS_CARRIERS)
     ]
@@ -1368,7 +1397,7 @@ def replacement_table(
         ``constraint`` and ``indicator``.
     """
     rows = {}
-    for horizon in networks[reference]:
+    for horizon in sorted(networks[reference].keys() & networks[other].keys()):
         a = policy_elements(networks[reference][horizon], country)
         b = policy_elements(networks[other][horizon], country)
         for constraint, indicators in POLICY_ELEMENTS.items():
@@ -1571,6 +1600,8 @@ def energy_supply(n: pypsa.Network, country: str) -> pd.DataFrame:
         (the keys of :data:`ENERGY_CARRIERS`).
     """
     flows = port_flows(n)
+    # a Line and a Link may share a name: identify a branch by both
+    flows["branch"] = flows.component + "/" + flows.name
     bus0_carrier = n.links.bus0.map(n.buses.carrier)
     rows = {}
     for carrier, bus_carriers in ENERGY_CARRIERS.items():
@@ -1584,11 +1615,13 @@ def energy_supply(n: pypsa.Network, country: str) -> pd.DataFrame:
         )
         home = f.bus_country == country
         # transfers with ports of this carrier at home and abroad
-        countries = f[transfer].groupby("name").bus_country.agg(set)
+        countries = f[transfer].groupby("branch").bus_country.agg(set)
         crossing = countries.index[
             countries.map(lambda c: country in c and len(c - {country}) > 0)
+            .astype(bool)
+            .to_numpy()
         ]
-        across = -f[transfer & home & f.name.isin(crossing)].energy.sum()
+        across = -f[transfer & home & f.branch.isin(crossing)].energy.sum()
         assets = (
             f.component.isin(["Generator", "Link"])
             & ~transfer
