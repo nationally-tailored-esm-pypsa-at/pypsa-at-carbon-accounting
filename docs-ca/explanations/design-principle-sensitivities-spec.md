@@ -198,8 +198,9 @@ notebook (`notebooks/design_principles.py`) stays unchanged. A sensitivity resul
 only after its effect has been evaluated in the sensitivity notebook; that is a separate step
 outside this spec.
 
-The notebook follows the pattern of the DP notebook. It starts with setup and checks (all
-horizons solved, config diff against the reference from `SENSITIVITY_REFERENCES`), followed by
+The notebook follows the pattern of the DP notebook. It starts with setup and checks (config
+diff against the reference from `SENSITIVITY_REFERENCES`; a table run × horizon of solved,
+infeasible with its documented cause, and not reached), followed by
 one step per family. For each headline metric, it shows the effect of the principle at each
 sensitivity point next to the base effect:
 
@@ -213,16 +214,23 @@ sensitivity point next to the base effect:
 Headline metrics (#19): AT CO2 emissions against the national budget, net cross-border flows
 per carrier, AT cost (`country_cost`), and claim shares (technology-based accounting in all
 DP runs). The notebook shows the effects side by side and sets no robustness threshold. The
-reading is left to the analysis. Checks: the config diff against the reference (existing),
-solved for all horizons.
+reading is left to the analysis. Unlike the DP notebook, a missing horizon does **not** stop the
+notebook (no `mo.stop`): the comparison covers the horizons solved in both runs, and the
+unsolved ones are shown as a result of their own.
 
 ## Acceptance
 
-- All 10 runs solve on the cluster for every horizon (`solved_<horizon>.nc`). Failures in the
-  steps after the solve are allowed: `validate_pypsa_at` (PyPSA-AT validation) and
-  `export_evaluation_pypsa_at` (evals). The sensitivities change key parameters on purpose, so
-  they do not have to pass the PyPSA-AT validation criteria. Add this rule for the `DP*S_*`
-  runs to the known failures in `CLAUDE.CA.md`.
+- Each of the 10 runs ends in one of three ways, and each needs its own handling:
+
+  | Step | Failure counts as | Handling |
+  |---|---|---|
+  | **Before the solve** (retrieve, build, compose) | workflow error, **not** a valid outcome | fix it; the acceptance is not met until every run reaches its solve |
+  | **Solve** (infeasible, unbounded, numerical trouble, no optimal solution) | possibly a **valid result** (e.g. S5: the AT path as EU cap may be infeasible) | find out why: Gurobi status, an IIS for infeasibility (`computeIIS`), the binding or conflicting constraints. Document the cause in the results notes of the spec. A numerical or setup problem is then treated as a workflow error and fixed; a real infeasibility stays a result |
+  | **After the solve** (`validate_pypsa_at`, `export_evaluation_pypsa_at`) | allowed | the sensitivities change key parameters on purpose, so they need not pass the PyPSA-AT validation criteria |
+
+  Add this rule for the `DP*S_*` runs to the known failures in `CLAUDE.CA.md`. The runs are
+  myopic: if a horizon is infeasible, the later horizons of that run cannot be solved. They are
+  reported as "not reached", not as failures of their own.
 - The config tests and the fork guard pass. The dry run with both overlays resolves 40
   compose and 40 solve jobs (plus the reference runs, if they are listed).
 - The S4 tests pass, and in the solved S4 networks only the AT cross-border lines and links
