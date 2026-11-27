@@ -15,7 +15,14 @@ from snakemake.utils import update_config
 from evals.carbon_accounting.design_principles import (
     DP_DIFFERENCES,
     DP_REFERENCES,
+    _principle,
     flatten,
+)
+from evals.carbon_accounting.sensitivities import (
+    EMBEDDING_KEYS,
+    SENSITIVITY_DIFFERENCES,
+    SENSITIVITY_REFERENCES,
+    TARGET_KEYS,
 )
 from mods.clustering.constants import VALID_CONFIGURATIONS
 from scripts.lib.validation.config import validate_config
@@ -26,30 +33,33 @@ CONFIG_STACK = (
     "config/config.at.yaml",
     "config/config.ca.yaml",
 )
+DP_OVERLAY = "config/config.design-principles.yaml"
+SENSITIVITY_OVERLAY = "config/config.design-principles-sensitivities.yaml"
 OVERLAYS = (
-    "config/config.carbon-accounting.yaml",
-    "config/config.design-principles.yaml",
+    ("config/config.carbon-accounting.yaml",),
+    (DP_OVERLAY,),
+    (DP_OVERLAY, SENSITIVITY_OVERLAY),
 )
 
 
-def merge_config(overlay: str) -> dict:
+def merge_config(*overlays: str) -> dict:
     """Merge the config stack the way Snakemake applies ``--configfile``."""
     merged = {}
-    for path in (*CONFIG_STACK, overlay):
+    for path in (*CONFIG_STACK, *overlays):
         update_config(merged, yaml.safe_load(Path(path).read_text()))
     return merged
 
 
-@pytest.fixture(scope="module", params=OVERLAYS)
+@pytest.fixture(scope="module", params=OVERLAYS, ids=lambda o: "+".join(o))
 def config(request) -> dict:
     """Return the merged config of every ``--configfile`` overlay."""
-    return merge_config(request.param)
+    return merge_config(*request.param)
 
 
 @pytest.fixture(scope="module")
 def dp_config() -> dict:
     """Return the merged config of the design-principle overlay."""
-    return merge_config("config/config.design-principles.yaml")
+    return merge_config(DP_OVERLAY)
 
 
 def test_config_validates(config):
@@ -190,3 +200,125 @@ def test_onwind_brownfield_default(config):
     toggle = config["mods"]["carbon_accounting"]["onwind_brownfield"]
     assert next(iter(toggle)) == "enable"
     assert toggle["enable"] is True
+
+
+def test_cross_border_extension_limits_default(config):
+    """The S4 switch is on, but without limits it leaves every network unchanged."""
+    limits = config["mods"]["carbon_accounting"]["cross_border_extension_limits"]
+    assert next(iter(limits)) == "enable"
+    assert limits["enable"] is True
+    assert limits["countries"] == ["AT"]
+    assert limits["s_nom_max_extension"] is None
+    assert limits["p_nom_max_extension"] is None
+
+
+# --- design-principle sensitivities --------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def sensitivity_config() -> dict:
+    """Return the merged config of the DP and the sensitivity overlay."""
+    return merge_config(DP_OVERLAY, SENSITIVITY_OVERLAY)
+
+
+@pytest.fixture(scope="module")
+def sensitivity_configs(sensitivity_config) -> dict[str, dict]:
+    """Return the resolved config of every sensitivity and reference run."""
+    scenarios = yaml.safe_load(
+        Path(sensitivity_config["run"]["scenarios"]["file"]).read_text()
+    )
+    resolved = {}
+    names = {*SENSITIVITY_DIFFERENCES, *SENSITIVITY_REFERENCES.values()}
+    for name in names:
+        merged = deepcopy(sensitivity_config)
+        update_config(merged, scenarios[name])
+        merged.pop("run")
+        merged.pop("description", None)
+        resolved[name] = merged
+    return resolved
+
+
+def test_sensitivity_overlay_lists_the_sensitivity_runs(sensitivity_config):
+    assert sensitivity_config["run"]["name"] == list(SENSITIVITY_DIFFERENCES)
+
+
+def test_sensitivity_overlay_keeps_the_dp_setup(sensitivity_config, dp_config):
+    """Only the run list changes: same prefix, scenarios file and solver."""
+    for key in ("prefix", "scenarios"):
+        assert sensitivity_config["run"][key] == dp_config["run"][key]
+    assert sensitivity_config["solving"] == dp_config["solving"]
+
+
+def test_sensitivity_names_map_to_their_principle():
+    for scenario in SENSITIVITY_DIFFERENCES:
+        number = re.match(r"DP(\d+)S_", scenario).group(1)
+        assert _principle(scenario) == f"P{number}"
+
+
+@pytest.mark.parametrize("scenario", SENSITIVITY_DIFFERENCES)
+def test_sensitivity_differs_from_its_reference_in_one_choice(
+    sensitivity_configs, scenario
+):
+    base = flatten(sensitivity_configs[SENSITIVITY_REFERENCES[scenario]])
+    run = flatten(sensitivity_configs[scenario])
+    expected = SENSITIVITY_DIFFERENCES[scenario]
+    assert _differing(base, run, expected) == expected
+
+
+def test_dp3_split_covers_the_dp3_keys():
+    """S2: the two runs together remove exactly what DP3_no_national_policy removes."""
+    assert TARGET_KEYS and EMBEDDING_KEYS
+    assert not TARGET_KEYS & EMBEDDING_KEYS
+    assert TARGET_KEYS | EMBEDDING_KEYS == DP_DIFFERENCES["DP3_no_national_policy"]
+    assert SENSITIVITY_DIFFERENCES["DP3S_targets_only"] == TARGET_KEYS
+    assert SENSITIVITY_DIFFERENCES["DP3S_embedding_only"] == EMBEDDING_KEYS
+
+
+@pytest.mark.parametrize(
+    "scenario, price", [("DP3S_h2_price_low", 37), ("DP3S_h2_price_high", 111)]
+)
+def test_h2_price_changes_only_h2(sensitivity_configs, scenario, price):
+    prices = sensitivity_configs[scenario]["sector"]["imports"]["price"]
+    reference = sensitivity_configs["DP3_no_national_policy"]["sector"]["imports"]
+    assert prices["H2"] == price == pytest.approx(reference["price"]["H2"] * price / 74)
+    assert {k: v for k, v in prices.items() if k != "H2"} == {
+        k: v for k, v in reference["price"].items() if k != "H2"
+    }
+
+
+@pytest.mark.parametrize(
+    "scenario, lines, links",
+    [("DP3S_extension_half", 0.5, 0.5), ("DP3S_extension_double", 2, 2)],
+)
+def test_extension_limits_scale_the_upstream_ones(
+    sensitivity_configs, scenario, lines, links
+):
+    config = sensitivity_configs[scenario]
+    limits = config["mods"]["carbon_accounting"]["cross_border_extension_limits"]
+    assert (
+        limits["s_nom_max_extension"] == lines * config["lines"]["s_nom_max_extension"]
+    )
+    assert (
+        limits["p_nom_max_extension"] == links * config["links"]["p_nom_max_extension"]
+    )
+
+
+@pytest.mark.parametrize(
+    "scenario", ["DP3S_eu_cap_at_path_no_policy", "DP3S_eu_cap_at_path_with_policy"]
+)
+def test_eu_cap_follows_the_at_path(sensitivity_configs, scenario):
+    config = sensitivity_configs[scenario]
+    cap = config["co2_budget"]["upper"]
+    # the AT path of the run with policy; DP3_no removes it from its own config
+    at_path = sensitivity_configs["DP3_with_national_policy"]["solving"]["constraints"][
+        "co2_budget_national"
+    ]["AT"]
+    for year in (*config["planning_horizons"], 2035, 2045):
+        assert cap[year] == at_path[year]
+    de = config["solving"]["constraints"]["co2_budget_national"]["DE"]
+    assert (
+        de
+        == sensitivity_configs["DP_base"]["solving"]["constraints"][
+            "co2_budget_national"
+        ]["DE"]
+    )

@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2023-2026 Austrian Gas Grid Management AG
+#
+# SPDX-License-Identifier: MIT
+# For license information, see the LICENSE.txt file in the project root.
+
+# Design-principle sensitivity runs, see
+# docs-ca/explanations/design-principle-sensitivities-spec.md. Layered on top of the
+# design-principle overlay, which sets the prefix, the scenarios file and the solver:
+#
+#   pixi run snakemake -call --configfile config/config.design-principles.yaml \
+#     config/config.design-principles-sensitivities.yaml
+#
+# Only the run list changes. The results sit next to the reference runs in
+# results/design-principles/. Add the reference runs (DP_base, DP1_no_national_data,
+# DP3_with_national_policy, DP3_no_national_policy) for a full run.
+
+run:
+  name:
+  - DP1S_klien_low
+  - DP1S_klien_high
+  - DP3S_targets_only
+  - DP3S_embedding_only
+  - DP3S_h2_price_low
+  - DP3S_h2_price_high
+  - DP3S_extension_half
+  - DP3S_extension_double
+  - DP3S_eu_cap_at_path_no_policy
+  - DP3S_eu_cap_at_path_with_policy
