@@ -37,13 +37,13 @@ DP2_at10:
 # infrastructure (see docs-ca/explanations/design-principle-effects-spec.md).
 DP3_with_national_policy:
   description: DP_base with KLIEN technical potentials instead of scenario potentials - basis for comparison with DP3_no_national_policy (P3)
-  mods:
+  mods: &dp3_with_mods
     klien_potential_limits:
       use_technical_potentials: true
 
 DP3_no_national_policy:
   description: DP3_with_national_policy without national AT policy constraints (P3) - no AT CO2 budget, EAG and electrolysis targets, net-zero electricity, and no cross-border flow and infrastructure constraints (NTC limits and floors, DE electricity import limit, TYNDP H2 imports, frozen gas grid)
-  mods:
+  mods: &dp3_no_mods
     klien_potential_limits:
       use_technical_potentials: true
     net_zero_electricity:
@@ -53,6 +53,9 @@ DP3_no_national_policy:
       enable: false
     tyndp_lower_bounds:
       enable: false
+      # also no years: apply_tyndp_transmission_lower_bounds checks only the years and
+      # would read its input, which the rule drops when the switch is off
+      years: []
     # a threshold year before the first planning horizon skips fix_gas_grid_capacity and
     # restore_asymmetric_pipeline_capacities in all horizons: gas pipelines (also AT and
     # border corridors) and new gas pipeline candidates stay extendable and may be
@@ -63,14 +66,14 @@ DP3_no_national_policy:
       # no TYNDP H2 import generators (fixed p_nom, e_sum_max); the upstream price-based
       # import options stay
       carriers_tyndp: []
-  solving:
+  solving: &dp3_no_solving
     constraints:
       co2_budget_national:
         # null (empty): no national CO2 budget for AT, DE unchanged
         AT:
       # DE net electricity import limit (TWh/a): non-binding, so the cross-border flow is
       # free (the constraint stays in the network, a null would break the loop over DE)
-      limits_volume_max:
+      limits_volume_max: &de_import_free
         electricity_import:
           DE:
             2020: 500
@@ -80,7 +83,7 @@ DP3_no_national_policy:
             2040: 500
             2045: 500
             2050: 500
-      limits_volume_min:
+      limits_volume_min: &eag_targets_off
         solar:
           AT:
             2030: 0
@@ -93,10 +96,143 @@ DP3_no_national_policy:
         biomass:
           AT:
             2030: 0
-      limits_capacity_min:
+      limits_capacity_min: &electrolysis_target_off
         Link:
           H2 Electrolysis:
             AT:
               2030: 0
               2040: 0
               2050: 0
+
+# Sensitivity runs (DP<principle>S_<what>), see
+# docs-ca/explanations/design-principle-sensitivities-spec.md. Each differs from its
+# reference run in one choice (SENSITIVITY_REFERENCES in
+# evals/carbon_accounting/sensitivities.py); the run list is
+# config/config.design-principles-sensitivities.yaml. The YAML anchors above reuse the
+# blocks of the P3 pair, so that a change there reaches the sensitivities too.
+
+# S1 KLIEN ambition (P1), reference DP_base. The ambition also sets the KLIEN
+# run-of-river corridor (build_klien_hydro_trajectory_at). The technical point is
+# DP3_with_national_policy, the medium point DP_base.
+DP1S_klien_low:
+  description: DP_base with the low KLIEN ambition (PV/wind caps and ror corridor) - sensitivity S1 of P1
+  mods:
+    klien_potential_limits:
+      ambition: low
+
+DP1S_klien_high:
+  description: DP_base with the high KLIEN ambition (PV/wind caps and ror corridor) - sensitivity S1 of P1
+  mods:
+    klien_potential_limits:
+      ambition: high
+
+# S2 DP3 split (P3), reference DP3_with_national_policy. Together, the two runs
+# remove exactly what DP3_no_national_policy removes.
+DP3S_targets_only:
+  description: DP3_with_national_policy without the national policy targets only (AT CO2 budget, EAG and electrolysis targets, net-zero electricity) - sensitivity S2 of P3
+  mods:
+    klien_potential_limits:
+      use_technical_potentials: true
+    net_zero_electricity:
+      enable: false
+  solving:
+    constraints:
+      co2_budget_national:
+        AT:
+      limits_volume_min: *eag_targets_off
+      limits_capacity_min: *electrolysis_target_off
+
+DP3S_embedding_only:
+  description: DP3_with_national_policy without the cross-border flow and infrastructure constraints only (NTC limits and floors, DE electricity import limit, TYNDP H2 imports, frozen gas grid) - sensitivity S2 of P3
+  mods:
+    klien_potential_limits:
+      use_technical_potentials: true
+    tyndp_cross_border_flow_limits:
+      enable: false
+    tyndp_lower_bounds:
+      enable: false
+      years: []
+    threshold_year_for_gas_grid_expansion: 2020
+  sector:
+    imports:
+      carriers_tyndp: []
+  solving:
+    constraints:
+      limits_volume_max: *de_import_free
+
+# S3 H2 import price (P3), reference DP3_no_national_policy (74 EUR/MWh). Only H2
+# changes; the deep merge keeps the prices of the other import carriers.
+DP3S_h2_price_low:
+  description: DP3_no_national_policy with an H2 import price of 37 EUR/MWh (-50 %) - sensitivity S3 of P3
+  mods: *dp3_no_mods
+  sector:
+    imports:
+      carriers_tyndp: []
+      price:
+        H2: 37
+  solving: *dp3_no_solving
+
+DP3S_h2_price_high:
+  description: DP3_no_national_policy with an H2 import price of 111 EUR/MWh (+50 %) - sensitivity S3 of P3
+  mods: *dp3_no_mods
+  sector:
+    imports:
+      carriers_tyndp: []
+      price:
+        H2: 111
+  solving: *dp3_no_solving
+
+# S4 transmission extension limits (P3), reference DP3_no_national_policy (upstream
+# 20000 MW per AC line, 30000 MW per DC link). Only the AT cross-border lines and links
+# change, see mods.carbon_accounting.cross_border_extension_limits.
+DP3S_extension_half:
+  description: DP3_no_national_policy with half the extension limit on AT cross-border lines and links - sensitivity S4 of P3
+  mods:
+    <<: *dp3_no_mods
+    carbon_accounting:
+      cross_border_extension_limits:
+        s_nom_max_extension: 10000
+        p_nom_max_extension: 15000
+  sector:
+    imports:
+      carriers_tyndp: []
+  solving: *dp3_no_solving
+
+DP3S_extension_double:
+  description: DP3_no_national_policy with double the extension limit on AT cross-border lines and links - sensitivity S4 of P3
+  mods:
+    <<: *dp3_no_mods
+    carbon_accounting:
+      cross_border_extension_limits:
+        s_nom_max_extension: 40000
+        p_nom_max_extension: 60000
+  sector:
+    imports:
+      carriers_tyndp: []
+  solving: *dp3_no_solving
+
+# S5 general emission cap with the AT path (P3): co2_budget.upper (EU, relative to
+# 1990) gets the reduction path of co2_budget_national.AT. Note the different bases:
+# the AT path is relative to AT 1990 CO2, the EU cap is a CO2 cap derived from the EU
+# GHG goals including non-CO2 and LULUCF. DE keeps its national budget.
+DP3S_eu_cap_at_path_no_policy:
+  description: DP3_no_national_policy with the AT budget path as EU CO2 cap - sensitivity S5 of P3
+  mods: *dp3_no_mods
+  sector:
+    imports:
+      carriers_tyndp: []
+  solving: *dp3_no_solving
+  co2_budget:
+    upper: &eu_cap_at_path
+      2025: 0.52
+      2030: 0.34
+      2035: 0.21
+      2040: 0.00
+      2045: 0.00
+      2050: -0.05
+
+DP3S_eu_cap_at_path_with_policy:
+  description: DP3_with_national_policy with the AT budget path as EU CO2 cap - sensitivity S5 of P3
+  mods: *dp3_with_mods
+  co2_budget:
+    upper: *eu_cap_at_path

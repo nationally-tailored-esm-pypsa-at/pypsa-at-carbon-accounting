@@ -36,6 +36,7 @@ CA_OWNED = (
     "config/scenarios.carbon-accounting.yaml",
     "config/config.design-principles.yaml",
     "config/scenarios.design-principles.yaml",
+    "config/config.design-principles-sensitivities.yaml",
     "CHANGELOG.CA.md",
     "CLAUDE.CA.md",
     ".github/workflows/ca-fork-guard.yaml",

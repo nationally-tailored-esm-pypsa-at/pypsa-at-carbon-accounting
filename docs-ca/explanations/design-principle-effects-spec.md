@@ -75,7 +75,7 @@ the Austrian border (international embedding, P3). The pair `DP3_with_national_p
 | Element | Where | In `DP3_no_national_policy` |
 |---|---|---|
 | TYNDP NTC net-flow limits per corridor (AC lines and DC links, per snapshot; 2030 and 2040) | `mods.tyndp_cross_border_flow_limits.enable`, `constraint_ntc_flow_limits` | `false` |
-| TYNDP NTC capacity floors (`s_nom_min`, `p_nom_min`; 2030 and 2040) | `mods.tyndp_lower_bounds.enable`, `apply_tyndp_transmission_lower_bounds` | `false` |
+| TYNDP NTC capacity floors (`s_nom_min`, `p_nom_min`; 2030 and 2040) | `mods.tyndp_lower_bounds.enable`, `.years`, `apply_tyndp_transmission_lower_bounds` | `false`, `years: []` (the function checks only the years and would read its input, which the rule drops when the switch is off) |
 | DE net electricity import limit (TWh/a; a DE limit, not AT) | `solving.constraints.limits_volume_max.electricity_import.DE` | `500` in every year (non-binding; the constraint stays in the network, because PyPSA-DE loops over the countries and a `null` would fail) |
 | TYNDP H2 import generators (fixed `p_nom`, `e_sum_max`) | `sector.imports.carriers_tyndp` | `[]`. The upstream price-based import options (`sector.imports.enable`, e.g. H2 at 74 EUR/MWh) stay |
 | Frozen gas grid: AGGM capacities fixed, no new methane pipelines, H2 retrofit only within the gas capacity, reverse legs restored | `mods.threshold_year_for_gas_grid_expansion`, `fix_gas_grid_capacity`, `restore_asymmetric_pipeline_capacities` | `2020` (before the first horizon: both functions are skipped in every horizon) |
@@ -93,6 +93,16 @@ at no cost (the "known limitation" noted in `gas.py`). The AGGM brownfield capac
 themselves stay (`modify_brownfield_gas_network_AT` is on). The switch also frees domestic AT
 pipelines, not only the border corridors; a corridor-specific switch would need a CA hook in
 `mods/network/gas.py`.
+
+Exception in 2030 (found 2026-11-27, when the first DP3-based runs composed 2030): up to 2030
+PyPSA-DE keeps the DE-internal retrofit candidates non-extendable (Kernnetz assumption,
+`scripts/pypsa-de/modify_prenetwork.py`). Up to the threshold year, `fix_gas_grid_capacity`
+fixes the gas pipelines without an extendable candidate. After it, it does nothing, so with `2020`
+about 10 DE-internal pipelines stayed extendable without a candidate in 2030, and
+`check_retrofit_pairing` stopped the compose. The CA hook `fix_unpaired_gas_pipelines`
+(`mods/carbon_accounting/design_principles.py`) fixes these pipelines after the threshold year,
+as `fix_gas_grid_capacity` does before it. In 2040 and 2050 every gas pipeline has a candidate,
+and in the PyPSA-AT default (`2040`) the hook does nothing.
 
 Not changed (kept in `DP3_no_national_policy`): `mods.block_russian_gas_imports`,
 `mods.unravel_natural_gas_imports`, `mods.PEMMDB_trajectories`, `mods.trajectories`, the DE

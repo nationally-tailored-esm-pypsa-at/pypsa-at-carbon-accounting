@@ -17,7 +17,12 @@ import pypsa
 from snakemake.script import Snakemake
 
 # --- START: Block Maintained by Carbon Accounting ---
-from mods.carbon_accounting import apply_carbon_accounting, onwind_brownfield_enabled
+from mods.carbon_accounting import (
+    apply_carbon_accounting,
+    apply_cross_border_extension_limits,
+    fix_unpaired_gas_pipelines,
+    onwind_brownfield_enabled,
+)
 
 # --- END: Block Maintained by Carbon Accounting ---
 from mods.demand.annual import apply_annual_demand_overrides
@@ -167,6 +172,12 @@ def modify_prenetwork(n: pypsa.Network, snakemake: Snakemake) -> None:
     fix_gas_grid_capacity(n, snakemake)
     restore_asymmetric_pipeline_capacities(n, snakemake)
     deduct_retrofitted_gas_capacity(n, snakemake)
+    # --- START: Block Maintained by Carbon Accounting ---
+    # DP3 unfreezes the gas grid before 2030, when PyPSA-DE still keeps the
+    # DE-internal retrofit candidates fixed: fix their gas pipelines, as
+    # fix_gas_grid_capacity does up to the threshold year
+    fix_unpaired_gas_pipelines(n, snakemake)
+    # --- END: Block Maintained by Carbon Accounting ---
     check_retrofit_pairing(n)
 
     apply_pemmdb_trajectories(n, snakemake, costs)
@@ -191,6 +202,9 @@ def modify_prenetwork(n: pypsa.Network, snakemake: Snakemake) -> None:
     # --- START: Block Maintained by Carbon Accounting ---
     # last network change, so that every link exists, including brownfield links
     apply_carbon_accounting(n, snakemake, costs)
+    # AT cross-border extension limits of the design-principle sensitivity S4,
+    # after the brownfield, the transmission caps and the TYNDP floors
+    apply_cross_border_extension_limits(n, snakemake)
     # --- END: Block Maintained by Carbon Accounting ---
 
     # Apply Load clipping just before the solve step

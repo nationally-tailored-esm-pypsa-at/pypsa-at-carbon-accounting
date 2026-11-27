@@ -1,6 +1,6 @@
 # Specification: Design-Principle Sensitivity Runs (Issue #19)
 
-Status: **spec agreed 2026-11-27 (AI-assisted), not implemented.** Scope: the sensitivity runs
+Status: **spec agreed 2026-11-27 (AI-assisted), implemented 2026-11-27 (AI-assisted), runs not solved yet.** Scope: the sensitivity runs
 and how the existing DP evaluation compares them. Builds on
 [design-principle-effects-spec.md](design-principle-effects-spec.md) (runs) and
 [design-principle-eval-spec.md](design-principle-eval-spec.md) (evaluation).
@@ -128,9 +128,11 @@ mods:
   It returns early if `enable` is false or both limits are `null`. Otherwise it selects the
   extendable AC lines and the extendable `DC` links whose two buses (`n.buses.country`) lie in
   different countries, one of them in `countries`. For these it sets
-  `s_nom_max = s_nom + s_nom_max_extension` (lines) and `p_nom_max = p_nom + p_nom_max_extension`
-  (links), on the same basis as `prepare_network.py`. It raises if a new bound is below
-  `s_nom_min` / `p_nom_min`, so that the run fails instead of becoming infeasible.
+  `s_nom_max = basis + s_nom_max_extension` (lines) and `p_nom_max = basis + p_nom_max_extension`
+  (links), on the same basis as `prepare_network.py` (see the implementation check). It raises
+  if a new bound is below `s_nom_min` / `p_nom_min`, so that the run fails instead of becoming
+  infeasible. Branches whose bound another step set below the upstream extension (e.g.
+  `p_nom_max = 0` for DC projects that cannot be built yet) keep it.
 - **Hook:** called inside the **existing** fenced block at the end of `modify_prenetwork`
   (`mods/network/common.py`), next to `apply_carbon_accounting`. `apply_carbon_accounting`
   itself cannot host it, because it returns early for the `technology` method of all DP runs.
@@ -138,8 +140,15 @@ mods:
 - **Default** (`null`/`null`): no change, so every other run is unaffected, and `enable: true`
   follows the feature-toggle rule of `CLAUDE.md`.
 - **Implementation check:** the `s_nom`/`p_nom` basis in compose must match the one
-  `prepare_network.py` uses in myopic runs (later horizons included). Verify it on the solved
-  test network.
+  `prepare_network.py` uses in myopic runs (later horizons included). Verified 2026-11-27 on the
+  solved test network (`results/carbon-accounting-test/DP_base`): `prepare_network.py` sets
+  `s_nom_max = s_nom + 20000` **before** the brownfield, which then moves `s_nom` to the previous
+  `s_nom_opt`. In compose, `s_nom` therefore is not the basis in later horizons (in 2050 up to
+  1076 MW above it, on 71 lines); `s_nom + extension` would compound the limit per horizon. The
+  function uses `basis = s_nom_max - lines.s_nom_max_extension` (and likewise for links), which
+  equals the base-network `s_nom` in every horizon, and raises if the upstream limit is not set.
+  The test network has 13 extendable AT cross-border AC lines and no AT DC link; with S4 half,
+  exactly these 13 lines change bounds.
 - **Tests:** `test/test_carbon_accounting/test_mods/test_design_principles.py` on a toy network.
   Only AT cross-border branches change; domestic AT branches and DE–other branches keep their
   bounds; `null` leaves the network unchanged; a bound below the minimum raises.
@@ -248,3 +257,13 @@ unsolved ones are shown as a result of their own.
 - **Compute:** 40 solves at AT35 with Gurobi (8–10 GB of resources per scenario). If this does
   not fit, coarsen the temporal resolution **for all DP runs and sensitivities alike**, never
   for one sensitivity only.
+
+## Results notes
+
+Causes of solves without an optimal solution, one line per run and horizon (also in
+`DOCUMENTED_CAUSES`, `evals/carbon_accounting/sensitivities.py`, so that the notebook
+shows them). Empty until the runs are solved.
+
+| Run | Horizon | Status | Cause |
+|---|---|---|---|
+| `DP1S_klien_low` | 2030 | infeasible (real result) | The EAG 2030 wind target (`limits_volume_min.wind.AT.2030`, 17 TWh) exceeds the maximum AT onwind production under the low KLIEN caps (8.8 GW, at most 14.0 TWh at full availability). Gurobi IIS (IISMethod 1, 2.9 h): 5052 constraints, only `GlobalConstraint-production_limit_lower-wind-AT`, the 35 AT onwind `Generator-ext-p_nom-upper` caps and the onwind dispatch limits. 2040 and 2050 not reached (myopic). The low KLIEN ambition is incompatible with the EAG wind target. |

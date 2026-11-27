@@ -18,6 +18,7 @@ Every path is either **CA-owned** (edit freely; PyPSA-AT never touches it) or **
 | `config/config.ca.yaml`, `config/plotting.ca.yaml` | CA defaults and tech colours, loaded after the PyPSA-AT config |
 | `config/config.carbon-accounting.yaml`, `config/scenarios.carbon-accounting.yaml` | reduced comparison runs (`--configfile` overlay) |
 | `config/config.design-principles.yaml`, `config/scenarios.design-principles.yaml` | design-principle effect runs (`--configfile` overlay) |
+| `config/config.design-principles-sensitivities.yaml` | run list of the design-principle sensitivity runs (`--configfile` overlay on top of `config/config.design-principles.yaml`) |
 | `docs-ca/` | specs, explanations, how-to guides; plain Markdown, not rendered |
 | `CHANGELOG.CA.md`, `CLAUDE.CA.md` | changelog and rules of this fork |
 | `.github/workflows/ca-fork-guard.yaml` | CI: fork guard and weekly merge check against PyPSA-AT |
@@ -46,7 +47,7 @@ leaves them in place. The current hooks:
 | File | Hook |
 |---|---|
 | `Snakefile` | `configfile:` for `config/config.ca.yaml` and `config/plotting.ca.yaml` |
-| `mods/network/common.py` | `apply_carbon_accounting` as the last network change in `modify_prenetwork`; `apply_onwind_brownfield` only when `mods.carbon_accounting.onwind_brownfield.enable` (design-principle run DP1) |
+| `mods/network/common.py` | `apply_carbon_accounting` as the last network change in `modify_prenetwork`; `apply_onwind_brownfield` only when `mods.carbon_accounting.onwind_brownfield.enable` (design-principle run DP1); `apply_cross_border_extension_limits` after `apply_carbon_accounting` (sensitivity S4); `fix_unpaired_gas_pipelines` before `check_retrofit_pairing` (gas grid unfrozen before 2030 in DP3) |
 | `scripts/pypsa-at/additional_functionality.py` | CA national budget instead of the AT one when `mods.carbon_accounting.enable`; `constraint_carbon_accounting` |
 | `evals/views/__init__.py` | registers `view_balance_carbon_claims` |
 | `evals/views/balances.py` | scales green kerosene claims with the domestic aviation share in `view_balance_carbon` |
@@ -89,6 +90,14 @@ PyPSA-AT lines lists them in `REPLACED` there; a new CA-owned path goes to `CA_O
   CA bug: the evals for `co2 compression` (missing group name) and
   `view_timeseries_carbon`, and the AT tests `test_custom_clustering` and
   `test_austrian_electricity_demand_matches_onip`. Investigate any other failure.
+- **Outcomes of the sensitivity runs (`DP*S_*`).** A failure before the solve (retrieve,
+  build, compose) is a workflow error: fix it. A solve without an optimal solution may be
+  a valid result: find the cause (Gurobi status, an IIS for infeasibility) and document
+  it in the results notes of
+  `docs-ca/explanations/design-principle-sensitivities-spec.md` and in
+  `DOCUMENTED_CAUSES` (`evals/carbon_accounting/sensitivities.py`); a numerical or setup
+  problem is a workflow error. Failures after the solve (`validate_pypsa_at`,
+  `export_evaluation_pypsa_at`) are allowed: the runs change key parameters on purpose.
 
 ## Branches and upstream sync
 

@@ -29,3 +29,14 @@ mods:
     # docs-ca/explanations/design-principle-effects-spec.md
     onwind_brownfield:
       enable: true
+
+    # Extension limits on the cross-border AC lines and DC links of some countries
+    # (mods/carbon_accounting/design_principles.py), on the basis of the upstream
+    # lines.s_nom_max_extension / links.p_nom_max_extension. null: the upstream limit
+    # stays. Set in the design-principle sensitivity S4, see
+    # docs-ca/explanations/design-principle-sensitivities-spec.md
+    cross_border_extension_limits:
+      enable: true
+      countries: [AT]          # lines/links between two countries, one of them listed
+      s_nom_max_extension:     # MW per AC line
+      p_nom_max_extension:     # MW per DC link
