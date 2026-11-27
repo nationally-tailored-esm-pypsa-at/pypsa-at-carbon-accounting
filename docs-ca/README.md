@@ -24,7 +24,8 @@ workflow, the other model modifications and evaluations) is in the
 - [Specification](explanations/carbon-accounting-spec.md) and
   [Evaluation Specification](explanations/carbon-accounting-eval-spec.md)
 - [Design-Principle Runs](explanations/design-principle-effects-spec.md) and
-  [Design-Principle Evaluation](explanations/design-principle-eval-spec.md)
+  [Design-Principle Evaluation](explanations/design-principle-eval-spec.md), and
+  [Design-Principle Sensitivities](explanations/design-principle-sensitivities-spec.md)
 
 The pages are plain Markdown and are not rendered into a docs site; the API is
 documented in the docstrings of `mods/carbon_accounting/` and `evals/carbon_accounting/`.
