@@ -169,6 +169,8 @@ def test_dp3_removes_cross_border_constraints(dp_configs):
     assert with_policy["mods.tyndp_lower_bounds.enable"] is True
     assert dp3["mods.tyndp_cross_border_flow_limits.enable"] is False
     assert dp3["mods.tyndp_lower_bounds.enable"] is False
+    # the lower bounds check only the years, not the switch
+    assert dp3["mods.tyndp_lower_bounds.years"] == []
     assert dp3["sector.imports.carriers_tyndp"] == []
     # the gas grid freeze ends before the first planning horizon
     assert dp3["mods.threshold_year_for_gas_grid_expansion"] < min(

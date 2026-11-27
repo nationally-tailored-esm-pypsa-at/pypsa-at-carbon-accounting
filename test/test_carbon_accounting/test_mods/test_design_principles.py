@@ -13,9 +13,11 @@ import pytest
 import mods.network.common as common
 from mods.carbon_accounting import (
     apply_cross_border_extension_limits,
+    fix_unpaired_gas_pipelines,
     onwind_brownfield_enabled,
 )
 from mods.carbon_accounting.design_principles import cross_border
+from mods.network.gas import check_retrofit_pairing
 
 
 @pytest.mark.parametrize("enable", [True, False])
@@ -237,3 +239,127 @@ def test_bound_set_by_another_step_is_kept():
     apply_cross_border_extension_limits(n, limits_snakemake())
     assert n.links.p_nom_max["DC AT-DE"] == 0.0
     assert n.lines.s_nom_max["AT-DE"] == 11000.0
+
+
+def build_gas_network(de_candidates_extendable: bool = False) -> pypsa.Network:
+    """
+    Return gas pipelines AT-DE and DE-DE with their H2 retrofit candidates in 2030.
+
+    As in PyPSA-DE up to 2030, the DE-internal candidate is not extendable
+    (Kernnetz assumption) unless ``de_candidates_extendable``.
+    """
+    n = pypsa.Network()
+    for bus in ("AT1", "DE1", "DE2"):
+        n.add("Bus", f"{bus} gas", carrier="gas")
+        n.add("Bus", f"{bus} H2", carrier="H2")
+    for a, b, extendable in [
+        ("AT1", "DE1", True),
+        ("DE1", "DE2", de_candidates_extendable),
+    ]:
+        n.add(
+            "Link",
+            f"gas pipeline {a} -> {b}",
+            bus0=f"{a} gas",
+            bus1=f"{b} gas",
+            carrier="gas pipeline",
+            p_nom=1000.0,
+            p_nom_extendable=True,
+        )
+        n.add(
+            "Link",
+            f"H2 pipeline retrofitted {a} -> {b}-2030",
+            bus0=f"{a} H2",
+            bus1=f"{b} H2",
+            carrier="H2 pipeline retrofitted",
+            p_nom_extendable=extendable,
+        )
+    return n
+
+
+def gas_snakemake(threshold: int = 2020, horizon: str = "2030", enable: bool = True):
+    return SimpleNamespace(
+        config={
+            "mods": {
+                "modify_brownfield_gas_network_AT": enable,
+                "threshold_year_for_gas_grid_expansion": threshold,
+            }
+        },
+        wildcards=SimpleNamespace(horizon=horizon),
+    )
+
+
+class TestFixUnpairedGasPipelines:
+    def test_unpaired_pipeline_fixed_after_threshold(self):
+        n = build_gas_network()
+        fix_unpaired_gas_pipelines(n, gas_snakemake())
+        extendable = n.links.p_nom_extendable
+        assert not extendable["gas pipeline DE1 -> DE2"]
+        assert extendable["gas pipeline AT1 -> DE1"]
+        assert n.links.p_nom["gas pipeline DE1 -> DE2"] == 1000.0
+
+    def test_pairing_check_passes_afterwards(self):
+        n = build_gas_network()
+        with pytest.raises(ValueError, match="not paired"):
+            check_retrofit_pairing(n)
+        fix_unpaired_gas_pipelines(n, gas_snakemake())
+        check_retrofit_pairing(n)
+
+    @pytest.mark.parametrize(
+        "snakemake",
+        [
+            gas_snakemake(threshold=2030),
+            gas_snakemake(threshold=2040),
+            gas_snakemake(enable=False),
+        ],
+        ids=["at-threshold", "before-threshold", "disabled"],
+    )
+    def test_no_change(self, snakemake):
+        """Up to the threshold year fix_gas_grid_capacity does this itself."""
+        n = build_gas_network()
+        fix_unpaired_gas_pipelines(n, snakemake)
+        assert n.links.compare(build_gas_network().links).empty
+
+    def test_all_paired_no_change(self):
+        n = build_gas_network(de_candidates_extendable=True)
+        fix_unpaired_gas_pipelines(n, gas_snakemake(horizon="2050"))
+        assert n.links.p_nom_extendable.all()
+
+    def test_no_candidates_no_change(self):
+        """Before the retrofit start year there are no candidates to pair."""
+        n = build_gas_network()
+        n.links.loc[
+            n.links.carrier == "H2 pipeline retrofitted", "p_nom_extendable"
+        ] = False
+        fix_unpaired_gas_pipelines(n, gas_snakemake())
+        assert n.links.p_nom_extendable[n.links.carrier == "gas pipeline"].all()
+
+
+def test_modify_prenetwork_fixes_unpaired_before_the_check(monkeypatch):
+    """The hook runs after the AT gas modifications and before the pairing check."""
+    calls = []
+    for name in dir(common):
+        obj = getattr(common, name)
+        if (
+            callable(obj)
+            and getattr(obj, "__module__", "").startswith("mods.")
+            and name not in ("modify_prenetwork", "onwind_brownfield_enabled")
+        ):
+            monkeypatch.setattr(common, name, lambda *a, **k: None)
+    for name in (
+        "deduct_retrofitted_gas_capacity",
+        "fix_unpaired_gas_pipelines",
+        "check_retrofit_pairing",
+    ):
+        monkeypatch.setattr(common, name, lambda *a, name=name: calls.append(name))
+    monkeypatch.setattr("scripts._helpers.load_costs", lambda *a, **k: None)
+    snakemake = SimpleNamespace(
+        config={"mods": {"carbon_accounting": {"onwind_brownfield": {"enable": True}}}},
+        input=SimpleNamespace(tech_costs=None),
+        wildcards=SimpleNamespace(horizon="2030"),
+    )
+    common.modify_prenetwork(MagicMock(), snakemake)
+    assert calls == [
+        "deduct_retrofitted_gas_capacity",
+        "fix_unpaired_gas_pipelines",
+        "check_retrofit_pairing",
+    ]

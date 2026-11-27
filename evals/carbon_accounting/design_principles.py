@@ -70,6 +70,7 @@ DP_DIFFERENCES: dict[str, set[str]] = {
         # cross-border flow and infrastructure constraints
         "mods.tyndp_cross_border_flow_limits.enable",
         "mods.tyndp_lower_bounds.enable",
+        "mods.tyndp_lower_bounds.years",
         "mods.threshold_year_for_gas_grid_expansion",
         "sector.imports.carriers_tyndp",
         *(

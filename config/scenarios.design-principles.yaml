@@ -53,6 +53,9 @@ DP3_no_national_policy:
       enable: false
     tyndp_lower_bounds:
       enable: false
+      # also no years: apply_tyndp_transmission_lower_bounds checks only the years and
+      # would read its input, which the rule drops when the switch is off
+      years: []
     # a threshold year before the first planning horizon skips fix_gas_grid_capacity and
     # restore_asymmetric_pipeline_capacities in all horizons: gas pipelines (also AT and
     # border corridors) and new gas pipeline candidates stay extendable and may be
@@ -148,6 +151,7 @@ DP3S_embedding_only:
       enable: false
     tyndp_lower_bounds:
       enable: false
+      years: []
     threshold_year_for_gas_grid_expansion: 2020
   sector:
     imports:

@@ -17,6 +17,10 @@ import pandas as pd
 import pypsa
 from snakemake.script import Snakemake
 
+# the pairing of gas pipelines and retrofit candidates must match the one of
+# check_retrofit_pairing exactly, so the helper is reused, not mirrored
+from mods.network.gas import _gas_pipeline_legs
+
 logger = getLogger(__name__)
 
 # MW below the minimum capacity that still count as rounding of ``s_nom_opt``
@@ -160,3 +164,55 @@ def apply_cross_border_extension_limits(n: pypsa.Network, snakemake: Snakemake) 
             f"Limited the extension of {len(index)} cross-border DC links of "
             f"{', '.join(countries)} to {links_max} MW."
         )
+
+
+def fix_unpaired_gas_pipelines(n: pypsa.Network, snakemake: Snakemake) -> None:
+    """
+    Fix the gas pipelines without a retrofit candidate after the gas grid threshold year.
+
+    Up to ``mods.threshold_year_for_gas_grid_expansion``,
+    ``fix_gas_grid_capacity`` (``mods/network/gas.py``) fixes every gas
+    pipeline without an extendable ``H2 pipeline retrofitted`` candidate,
+    because the upstream retrofit constraint pairs both by position. After the
+    threshold year it does nothing. PyPSA-DE keeps the DE-internal retrofit
+    candidates non-extendable up to 2030 (Kernnetz assumption), so a threshold
+    year before 2030 (``DP3_no_national_policy`` and the sensitivity runs
+    based on it) leaves these pipelines extendable without a candidate, and
+    ``check_retrofit_pairing`` stops the compose. This function treats them as
+    ``fix_gas_grid_capacity`` does before the threshold year: fixed at their
+    capacity.
+
+    Parameters
+    ----------
+    n
+        The pre-network, after the gas pipeline modifications of PyPSA-AT.
+    snakemake
+        The Snakemake object, for ``mods`` and the ``horizon`` wildcard.
+    """
+    mods = snakemake.config["mods"]
+    if not mods.get("modify_brownfield_gas_network_AT"):
+        return
+    horizon = int(snakemake.wildcards.horizon)
+    # up to the threshold year, fix_gas_grid_capacity does this itself
+    if horizon <= int(mods["threshold_year_for_gas_grid_expansion"]):
+        return
+    links = n.links
+    candidates = links.index[
+        (links.carrier == "H2 pipeline retrofitted") & links.p_nom_extendable
+    ]
+    # without candidates, the retrofit constraint pairs nothing
+    if candidates.empty:
+        return
+    unpaired = (
+        (links.carrier == "gas pipeline")
+        & links.p_nom_extendable
+        & ~links.index.isin(_gas_pipeline_legs(candidates))
+    )
+    if not unpaired.any():
+        return
+    n.links.loc[unpaired, "p_nom_extendable"] = False
+    logger.info(
+        f"Fixed {unpaired.sum()} gas pipeline(s) without an extendable retrofit "
+        f"candidate in {horizon}, after the gas grid threshold year: "
+        f"{', '.join(links.index[unpaired])}."
+    )

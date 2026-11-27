@@ -266,3 +266,4 @@ shows them). Empty until the runs are solved.
 
 | Run | Horizon | Status | Cause |
 |---|---|---|---|
+| `DP1S_klien_low` | 2030 | infeasible (real result) | The EAG 2030 wind target (`limits_volume_min.wind.AT.2030`, 17 TWh) exceeds the maximum AT onwind production under the low KLIEN caps (8.8 GW, at most 14.0 TWh at full availability). Gurobi IIS (IISMethod 1, 2.9 h): 5052 constraints, only `GlobalConstraint-production_limit_lower-wind-AT`, the 35 AT onwind `Generator-ext-p_nom-upper` caps and the onwind dispatch limits. 2040 and 2050 not reached (myopic). The low KLIEN ambition is incompatible with the EAG wind target. |

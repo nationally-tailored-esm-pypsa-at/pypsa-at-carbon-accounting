@@ -106,7 +106,13 @@ SENSITIVITY_REFERENCES: dict[str, str] = {
 }
 # documented causes of solves without an optimal solution, keyed by (run,
 # horizon); filled from the results notes of the spec
-DOCUMENTED_CAUSES: dict[tuple[str, str], str] = {}
+DOCUMENTED_CAUSES: dict[tuple[str, str], str] = {
+    ("DP1S_klien_low", "2030"): (
+        "infeasible: the EAG wind target (17 TWh) exceeds the maximum AT onwind "
+        "production under the low KLIEN caps (14.0 TWh, 8.8 GW); IIS: "
+        "production_limit_lower-wind-AT and the 35 AT onwind p_nom caps"
+    ),
+}
 
 
 @dataclass(frozen=True)
