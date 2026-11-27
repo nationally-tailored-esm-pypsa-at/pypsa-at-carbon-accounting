@@ -17,11 +17,10 @@ answers one of these questions:
 | Which part of the P3 effect comes from the national targets and which from the international embedding? | **S2** DP3 split |
 | Once the TYNDP H2 imports are gone, how much does the P3 effect depend on the assumed H2 import price? | **S3** H2 import price |
 | Once the NTC limits and floors are gone, how much does the P3 effect depend on the generic extension limits? | **S4** transmission extension limits |
-| Is the P3 effect a loss of climate ambition, or does it come from the national policy itself? | **S5** general emission cap set to the AT path |
+| How do national emission constraints and system-wide emission constraints interact? | **S5** general emission cap set to the AT path |
 
 Scope: the design-principle family only. Sensitivities of the reduced carbon accounting runs
-(`CA_*`) are not part of this spec, and the acceptance criteria of #19 need to be updated to
-say so.
+(`CA_*`) are not part of this spec.
 
 ## Design rules
 
@@ -100,18 +99,50 @@ the other carriers.
 
 The base is `DP3_no_national_policy`. Without the NTC limits and floors, the upstream limits
 on extension per line/link become binding for cross-border expansion. The range is half and
-double.
+double, applied **only to the AC lines and DC links from and to AT**. All other lines and links
+keep the upstream limits (20000 MW / 30000 MW).
 
-| Run | `lines.s_nom_max_extension` | `links.p_nom_max_extension` |
+| Run | AT cross-border AC lines | AT cross-border DC links |
 |---|---|---|
 | `DP3S_extension_half` | 10000 MW | 15000 MW |
 | `DP3_no_national_policy` (exists) | 20000 MW | 30000 MW |
 | `DP3S_extension_double` | 40000 MW | 60000 MW |
 
-> [!NOTE]
-> The limits apply to **every** AC line and DC link in the model (`prepare_network.py`), not
-> only to AT border corridors. S4 therefore also changes expansion inside DE and AT. A value of
-> `0` or `inf` disables the limit, so neither is used as a sensitivity point.
+The upstream keys `lines.s_nom_max_extension` and `links.p_nom_max_extension` apply to
+**every** AC line and DC link (`prepare_network.py`), so they cannot be used for this. S4 needs
+a new CA switch instead:
+
+```yaml
+# config/config.ca.yaml
+mods:
+  carbon_accounting:
+    cross_border_extension_limits:
+      enable: true
+      countries: [AT]          # lines/links with exactly one bus in one of these countries
+      s_nom_max_extension:     # MW on AC lines; null = upstream limit unchanged
+      p_nom_max_extension:     # MW on DC links; null = upstream limit unchanged
+```
+
+- **Function:** `apply_cross_border_extension_limits(n, snakemake)` in
+  `mods/carbon_accounting/design_principles.py`, re-exported from `mods/carbon_accounting/__init__.py`.
+  It returns early if `enable` is false or both limits are `null`. Otherwise it selects the
+  extendable AC lines and the extendable `DC` links whose two buses (`n.buses.country`) lie in
+  different countries, one of them in `countries`. For these it sets
+  `s_nom_max = s_nom + s_nom_max_extension` (lines) and `p_nom_max = p_nom + p_nom_max_extension`
+  (links), on the same basis as `prepare_network.py`. It raises if a new bound is below
+  `s_nom_min` / `p_nom_min`, so that the run fails instead of becoming infeasible.
+- **Hook:** called inside the **existing** fenced block at the end of `modify_prenetwork`
+  (`mods/network/common.py`), next to `apply_carbon_accounting`. `apply_carbon_accounting`
+  itself cannot host it, because it returns early for the `technology` method of all DP runs.
+  No new hooked file; add the new call to the hook table in `CLAUDE.CA.md`.
+- **Default** (`null`/`null`): no change, so every other run is unaffected, and `enable: true`
+  follows the feature-toggle rule of `CLAUDE.md`.
+- **Implementation check:** the `s_nom`/`p_nom` basis in compose must match the one
+  `prepare_network.py` uses in myopic runs (later horizons included). Verify it on the solved
+  test network.
+- **Tests:** `test/test_carbon_accounting/test_mods/test_design_principles.py` on a toy network.
+  Only AT cross-border branches change; domestic AT branches and DE–other branches keep their
+  bounds; `null` leaves the network unchanged; a bound below the minimum raises.
 
 ### S5: general emission cap set to the AT path (P3)
 
@@ -151,16 +182,26 @@ Comparing the two S5 runs gives the P3 effect when the general cap has the AT pa
 | 10 scenarios | `config/scenarios.design-principles.yaml` (scenario `mods` are deep-merged; keys can be overwritten, not deleted) |
 | Run list of the sensitivities | new overlay `config/config.design-principles-sensitivities.yaml`, which only sets `run.name` to the 10 runs (and the reference runs, if a full run is wanted). Usage: `--configfile config/config.design-principles.yaml config/config.design-principles-sensitivities.yaml`. `config/config.design-principles.yaml` keeps its 5 DP runs. Same `run.prefix`, so the results sit next to the reference runs in `results/design-principles/` |
 | Fork guard | add the new overlay to `CA_OWNED` in `test/test_carbon_accounting/test_fork_guard.py` and to the path table in `CLAUDE.CA.md` |
-| Expected keys and references | `DP_DIFFERENCES` and `DP_REFERENCES` in `evals/carbon_accounting/design_principles.py`: one entry per new run. Reference `DP_base` for S1, `DP3_with_national_policy` for S2 and S5, `DP3_no_national_policy` for S3, S4 and `DP3S_eu_cap_at_path_no_policy` |
-| Config tests | `test/test_carbon_accounting/test_config.py`: each sensitivity differs from its reference only in the expected keys (existing parametrised test); S2 keys together = DP3 keys; S3 sets only `price.H2`; S5 cap equals `co2_budget_national.AT` for each horizon |
-| No new hooks, no new wildcards | everything is config; S1 changes the build of the ror corridor, but the DAG is the same |
+| S4 switch | `mods.carbon_accounting.cross_border_extension_limits` in `config/config.ca.yaml`; function and hook call as in *S4* |
+| Expected keys and references | `SENSITIVITY_DIFFERENCES` and `SENSITIVITY_REFERENCES` in the new module `evals/carbon_accounting/sensitivities.py` (see *Evaluation*), one entry per new run, in the same format as `DP_DIFFERENCES` / `DP_REFERENCES`. Reference `DP_base` for S1, `DP3_with_national_policy` for S2 and S5, `DP3_no_national_policy` for S3, S4 and `DP3S_eu_cap_at_path_no_policy`. `DP_DIFFERENCES` stays at the 5 DP runs |
+| Config tests | `test/test_carbon_accounting/test_config.py`: each sensitivity differs from its reference only in the expected keys (parametrised over `SENSITIVITY_DIFFERENCES`); the sensitivity overlay lists exactly these runs; S2 keys together = DP3 keys; S3 sets only `price.H2`; S5 cap equals `co2_budget_national.AT` for each horizon |
+| No new wildcards, no new hooked files | apart from the S4 switch, everything is config; S1 changes the build of the ror corridor, but the DAG is the same |
 
 ## Evaluation
 
-The DP notebook (`evals/carbon_accounting/notebooks/design_principles.py`) handles the
-sensitivities through its existing reference mapping. In addition, there is one
-**sensitivity step** per family. For each headline metric, it shows the effect of the
-principle at each sensitivity point next to the base effect:
+The sensitivities get **their own notebook**:
+`evals/carbon_accounting/notebooks/design_principle_sensitivities.py` (marimo; UI, caching
+and plots only). Its computations go to `evals/carbon_accounting/sensitivities.py`, which reuses
+the functions of `design_principles.py` and `accounting.py`. Tests go to
+`test/test_carbon_accounting/test_evals/test_sensitivities.py` (toy networks). The general DP
+notebook (`notebooks/design_principles.py`) stays unchanged. A sensitivity result moves there
+only after its effect has been evaluated in the sensitivity notebook; that is a separate step
+outside this spec.
+
+The notebook follows the pattern of the DP notebook. It starts with setup and checks (all
+horizons solved, config diff against the reference from `SENSITIVITY_REFERENCES`), followed by
+one step per family. For each headline metric, it shows the effect of the principle at each
+sensitivity point next to the base effect:
 
 | Family | Effect shown per point |
 |---|---|
@@ -177,11 +218,16 @@ solved for all horizons.
 
 ## Acceptance
 
-- All 10 runs go through `all_at` on the cluster. The only failures allowed are the known
-  failures of CA runs (`CLAUDE.CA.md`).
+- All 10 runs solve on the cluster for every horizon (`solved_<horizon>.nc`). Failures in the
+  steps after the solve are allowed: `validate_pypsa_at` (PyPSA-AT validation) and
+  `export_evaluation_pypsa_at` (evals). The sensitivities change key parameters on purpose, so
+  they do not have to pass the PyPSA-AT validation criteria. Add this rule for the `DP*S_*`
+  runs to the known failures in `CLAUDE.CA.md`.
 - The config tests and the fork guard pass. The dry run with both overlays resolves 40
   compose and 40 solve jobs (plus the reference runs, if they are listed).
-- The notebook shows each sensitivity against its reference (table above).
+- The S4 tests pass, and in the solved S4 networks only the AT cross-border lines and links
+  have changed bounds.
+- The sensitivity notebook shows each sensitivity against its reference (table above).
 - This spec documents the parameters, ranges and rationale.
 
 ## Open points
